@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "Daily Meetup Selfie",
+    "slug": "bnoc-react",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": null,
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#1A1A1A"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bnoc.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Daily Meetup Selfie to access your camera to take selfies with friends.",
+        "NSMicrophoneUsageDescription": "Allow Daily Meetup Selfie to access your microphone for video calls."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1A1A1A"
+      },
+      "package": "com.bnoc.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Daily Meetup Selfie to access your camera to take selfies with friends."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Daily Meetup Selfie to access your photos to select profile images."
+        }
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Daily Meetup Selfie to access your camera to take dual-camera selfies.",
+          "enableMicrophonePermission": true,
+          "microphonePermissionText": "Allow Daily Meetup Selfie to access your microphone for video calls."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#990000",
+          "sounds": ["./assets/notification-sound.wav"]
+        }
+      ]
+    ],
+    "scheme": "dailymeetup",
+    "sdkVersion": "52.0.0",
+    "primaryColor": "#990000"
+  }
+}

@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isPairingParticipant(pairingData) {
+      return request.auth.uid in pairingData.users;
+    }
+    
+    function isStanfordEmail(email) {
+      return email.matches(".*@stanford\\.edu$");
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Anyone can read basic user data if authenticated
+      allow read: if isSignedIn();
+      
+      // Only the user can update their own data
+      allow update: if isOwner(userId);
+      
+      // Allow creation only with Stanford email
+      allow create: if isOwner(userId) && isStanfordEmail(request.resource.data.email);
+      
+      // No deletion allowed (handled by admin functions)
+      allow delete: if false;
+      
+      // User's private pairing feed collection
+      match /feed/{feedId} {
+        allow read: if isOwner(userId);
+        // No client-side writes allowed (handled by cloud functions)
+        allow write: if false;
+      }
+    }
+    
+    // Pairings collection
+    match /pairings/{pairingId} {
+      // Can read a pairing if authenticated AND:
+      // 1. You're a participant, OR
+      // 2. The pairing isn't private
+      allow read: if isSignedIn() && 
+        (isPairingParticipant(resource.data) || !resource.data.isPrivate);
+      
+      // Only participants can update a pairing
+      allow update: if isSignedIn() && isPairingParticipant(resource.data);
+      
+      // No client-side creation or deletion (handled by cloud functions)
+      allow create, delete: if false;
+      
+      // Comments subcollection
+      match /comments/{commentId} {
+        allow read: if isSignedIn() && 
+          (isPairingParticipant(get(/databases/$(database)/documents/pairings/$(pairingId)).data) || 
+           !get(/databases/$(database)/documents/pairings/$(pairingId)).data.isPrivate);
+        
+        // Only the comment author can update or delete their comment
+        allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
+        
+        // Any authenticated user can create a comment on pairings they can read
+        allow create: if isSignedIn() && 
+          (isPairingParticipant(get(/databases/$(database)/documents/pairings/$(pairingId)).data) || 
+           !get(/databases/$(database)/documents/pairings/$(pairingId)).data.isPrivate) &&
+          request.resource.data.userId == request.auth.uid;
+      }
+    }
+    
+    // Notification settings collection
+    match /notificationSettings/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+    
+    // Global feed collection (public pairings only)
+    match /globalFeed/{pairingId} {
+      allow read: if isSignedIn();
+      // No client-side writes allowed (handled by cloud functions)
+      allow write: if false;
+    }
+  }
+}
