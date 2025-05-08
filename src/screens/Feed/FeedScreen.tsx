@@ -587,7 +587,7 @@ const FeedScreen: React.FC = () => {
           {/* Current pairing indicator */}
           {currentPairing && (
             <View style={styles.currentPairingIndicator}>
-              <Text style={styles.currentPairingText}>Today's Pairing</Text>
+              <Text style={styles.currentPairingText}>Txt_ovrflw</Text>
             </View>
           )}
         </Animated.View>

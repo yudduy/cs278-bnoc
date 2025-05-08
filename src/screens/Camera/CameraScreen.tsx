@@ -1,530 +1,438 @@
-/**
- * CameraScreen
- * 
- * Mock implementation of dual camera screen for demo purposes.
- * Since react-native-vision-camera isn't supported in Expo Go,
- * this uses static images to simulate the camera functionality.
- */
-
-import React, { useState, useRef, useEffect } from 'react';
 import {
-  View,
-  Text,
+  CameraMode,
+  CameraType,
+  CameraView,
+  useCameraPermissions,
+} from "expo-camera";
+import { useRef, useState, useEffect } from "react";
+import {
+  Button,
+  Pressable,
   StyleSheet,
-  TouchableOpacity,
-  Image,
-  SafeAreaView,
-  Animated,
-  Dimensions,
+  Text,
+  View,
   Alert,
-  ScrollView,
-} from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { usePairing } from '../../context/PairingContext';
-import { COLORS } from '../../config/colors';
-import { globalStyles } from '../../styles/globalStyles';
+  Animated, // Import Animated
+  // Dimensions // Import Dimensions if needed for layout calculations
+} from "react-native";
+import { Image } from "expo-image";
+import AntDesign from "@expo/vector-icons/AntDesign";
+import Feather from "@expo/vector-icons/Feather";
+import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import * as MediaLibrary from "expo-media-library";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+export default function App() {
+  console.log("App component render START. State:", { uri, mode, facing, recording }); // Log state at start
 
-// Mock image URLs for simulating camera capture
-const MOCK_FRONT_IMAGES = [
-  'https://picsum.photos/600/800?random=front1',
-  'https://picsum.photos/600/800?random=front2',
-  'https://picsum.photos/600/800?random=front3',
-  'https://picsum.photos/600/800?random=front4',
-];
+  // Permissions Hooks
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
 
-const MOCK_BACK_IMAGES = [
-  'https://picsum.photos/600/800?random=back1',
-  'https://picsum.photos/600/800?random=back2',
-  'https://picsum.photos/600/800?random=back3',
-  'https://picsum.photos/600/800?random=back4',
-];
+  // State Hooks
+  const ref = useRef<CameraView>(null); // Ref for CameraView component
+  const [uri, setUri] = useState<string | null>(null); // Stores URI of captured media
+  const [mode, setMode] = useState<CameraMode>("picture"); // 'picture' or 'video'
+  const [facing, setFacing] = useState<CameraType>("back"); // 'front' or 'back'
+  const [recording, setRecording] = useState(false); // Tracks if video is recording
+  const [isVideoPreview, setIsVideoPreview] = useState(false); // Tracks if preview is for video
 
-const CameraScreen: React.FC = () => {
-  const navigation = useNavigation();
-  const { currentPairing, completePairing, pairingStatus } = usePairing();
-  
-  // State
-  const [frontImage, setFrontImage] = useState<string | null>(null);
-  const [backImage, setBackImage] = useState<string | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [isPreview, setIsPreview] = useState(false);
-  const [isPrivate, setIsPrivate] = useState(false);
-  
-  // Animation values
-  const shutterAnimation = useRef(new Animated.Value(1)).current;
-  const previewSlideAnimation = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  
-  // Timer for expiration
-  const [timeRemaining, setTimeRemaining] = useState<string>('');
-  
-  // Calculate time remaining
+  // Animation Value
+  const shutterAnimation = useRef(new Animated.Value(1)).current; // For shutter button opacity animation
+
+  // Effect to request media library permission on mount if needed
   useEffect(() => {
-    if (!currentPairing?.expiresAt) return;
-    
-    const updateTimeRemaining = () => {
-      if (!currentPairing?.expiresAt) return;
-      
-      const now = new Date();
-      const expiresAt = new Date(currentPairing.expiresAt.seconds * 1000);
-      const diffMs = expiresAt.getTime() - now.getTime();
-      
-      if (diffMs <= 0) {
-        setTimeRemaining('Expired');
-        return;
-      }
-      
-      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      
-      setTimeRemaining(`${diffHrs}h ${diffMins}m remaining`);
-    };
-    
-    updateTimeRemaining();
-    const interval = setInterval(updateTimeRemaining, 60000); // Update every minute
-    
-    return () => clearInterval(interval);
-  }, [currentPairing]);
-  
-  // Simulate camera capture
-  const handleCapture = () => {
-    if (isCapturing || isPreview) return;
-    
-    setIsCapturing(true);
-    
-    // Animate shutter
-    Animated.sequence([
-      Animated.timing(shutterAnimation, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shutterAnimation, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    
-    // Simulate camera delay
-    setTimeout(() => {
-      // Get random images to simulate camera capture
-      const randomFrontIndex = Math.floor(Math.random() * MOCK_FRONT_IMAGES.length);
-      const randomBackIndex = Math.floor(Math.random() * MOCK_BACK_IMAGES.length);
-      
-      setFrontImage(MOCK_FRONT_IMAGES[randomFrontIndex]);
-      setBackImage(MOCK_BACK_IMAGES[randomBackIndex]);
-      setIsCapturing(false);
-      setIsPreview(true);
-      
-      // Animate preview slide up
-      Animated.spring(previewSlideAnimation, {
-        toValue: 0,
-        tension: 50,
-        friction: 9,
-        useNativeDriver: true,
-      }).start();
-    }, 500);
-  };
-  
-  // Handle retake
-  const handleRetake = () => {
-    // Animate preview slide down
-    Animated.timing(previewSlideAnimation, {
-      toValue: SCREEN_HEIGHT,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setIsPreview(false);
-      setFrontImage(null);
-      setBackImage(null);
-    });
-  };
-  
-  // Handle save
-  const handleSave = async () => {
-    if (!frontImage || !backImage || !currentPairing) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-      return;
+    console.log("useEffect for Media Permission Check. Status:", mediaPermission);
+    if (!mediaPermission?.granted && mediaPermission?.canAskAgain) {
+      console.log("Requesting Media Library permission.");
+      requestMediaPermission();
     }
-    
-    try {
-      await completePairing({
-        frontImage,
-        backImage,
-        isPrivate,
-      });
-      
+  }, [mediaPermission]); // Re-run if mediaPermission status changes
+
+  // --- Permission Handling ---
+  // Initial state while checking camera permissions
+  if (!cameraPermission) {
+     console.log("Camera permissions initial state.");
+    return <View />;
+  }
+
+  // Camera permissions not granted yet
+  if (!cameraPermission.granted) {
+    console.log("Camera permissions not granted.");
+    return (
+      <View style={styles.container}>
+        <Text style={styles.permissionText}>
+          We need your permission to use the camera.
+        </Text>
+        <Button onPress={requestCameraPermission} title="Grant Camera Permission" />
+      </View>
+    );
+  }
+
+  // --- Media Saving Function ---
+  const saveMedia = async (mediaUri: string | undefined, type: 'photo' | 'video') => {
+    console.log(`saveMedia called. URI: ${mediaUri}, Type: ${type}`);
+    if (!mediaUri) {
+        console.warn("saveMedia: No media URI provided.");
+        return;
+    }
+
+    // Check media library permission status again before saving
+    if (!mediaPermission?.granted) {
+      console.warn("saveMedia: Media Library permission not granted.");
       Alert.alert(
-        'Success',
-        'Your selfie has been uploaded!',
+        "Permission Required",
+        "We need permission to save to your media library.",
         [
-          {
-            text: 'View in Feed',
-            onPress: () => {
-              // @ts-ignore - Navigation typing
-              navigation.navigate('Feed');
-            },
-          },
+          { text: "Cancel", style: "cancel" },
+          { text: "Grant Permission", onPress: requestMediaPermission }, // Ask again
         ]
       );
+      return; // Stop if no permission
+    }
+
+    try {
+      console.log("Attempting to save media to library...");
+      await MediaLibrary.saveToLibraryAsync(mediaUri);
+      console.log("Media saved successfully.");
+      Alert.alert("Saved!", `${type === 'photo' ? 'Photo' : 'Video'} saved to gallery.`);
     } catch (error) {
-      console.error('Error saving pairing:', error);
-      Alert.alert('Error', 'Failed to save selfie. Please try again.');
+      console.error("Error saving media: ", error);
+      Alert.alert("Error", `Could not save ${type === 'photo' ? 'photo' : 'video'}.`);
     }
   };
-  
-  // Handle close
-  const handleClose = () => {
-    navigation.goBack();
-  };
-  
-  // Toggle privacy setting
-  const togglePrivacy = () => {
-    setIsPrivate(!isPrivate);
-  };
-  
-  // Check if partner info is available
-  const partnerName = currentPairing?.users ? 
-    (currentPairing.users[0] === 'user1' ? 'Max' : 'Sergey') : 
-    'Partner';
-  
-  return (
-    <SafeAreaView style={[globalStyles.container, { backgroundColor: '#000' }]}>
-      {isPreview ? (
-        // Preview mode
-        <Animated.View
-          style={[
-            styles.previewContainer,
-            { transform: [{ translateY: previewSlideAnimation }] }
-          ]}
-        >
-          <View style={styles.previewHeader}>
-            <TouchableOpacity onPress={handleRetake} style={styles.previewButton}>
-              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-              <Text style={styles.previewButtonText}>Retake</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.privacyButton, isPrivate && styles.privateActive]}
-              onPress={togglePrivacy}
-            >
-              <Ionicons 
-                name={isPrivate ? "lock-closed" : "lock-open"} 
-                size={16} 
-                color={isPrivate ? "#FFFFFF" : "#CCCCCC"} 
-              />
-              <Text style={[
-                styles.privacyButtonText,
-                isPrivate && styles.privateActiveText
-              ]}>
-                {isPrivate ? 'Private' : 'Public'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView>
-            <View style={styles.imagesContainer}>
-              <Image source={{ uri: frontImage || '' }} style={styles.previewImage} />
-              <View style={styles.imageDivider} />
-              <Image source={{ uri: backImage || '' }} style={styles.previewImage} />
-            </View>
-            
-            <View style={styles.previewInfo}>
-              <Text style={styles.previewTitle}>Ready to share your selfie?</Text>
-              <Text style={styles.previewDescription}>
-                This selfie will be posted to your profile and feed.
-                {isPrivate 
-                  ? ' Since it\'s private, only you and your partner can see it.' 
-                  : ' It will also appear in the global feed.'}
-              </Text>
-            </View>
-          </ScrollView>
-          
-          <TouchableOpacity
-            style={styles.saveButton}
-            onPress={handleSave}
-            disabled={pairingStatus === 'uploading'}
-          >
-            {pairingStatus === 'uploading' ? (
-              <Text style={styles.saveButtonText}>Uploading...</Text>
-            ) : (
-              <Text style={styles.saveButtonText}>Share Selfie</Text>
-            )}
-          </TouchableOpacity>
-        </Animated.View>
-      ) : (
-        // Camera mode
-        <View style={styles.cameraContainer}>
-          {/* Mock camera view */}
-          <Image
-            source={{ uri: 'https://picsum.photos/600/800?random=camera' }}
-            style={styles.mockCameraView}
-          />
-          
-          {/* Front camera preview overlay */}
-          <View style={styles.frontCameraPreview}>
-            <Image
-              source={{ uri: 'https://picsum.photos/200/200?random=front-preview' }}
-              style={styles.frontPreviewImage}
-            />
-          </View>
-          
-          {/* Header info */}
-          <View style={styles.headerContainer}>
-            <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-              <Ionicons name="close" size={28} color="#FFFFFF" />
-            </TouchableOpacity>
-            
-            <View style={styles.pairingInfo}>
-              <Text style={styles.pairingTitle}>
-                Today's pairing with {partnerName}
-              </Text>
-              <Text style={styles.timeRemaining}>{timeRemaining}</Text>
-            </View>
-          </View>
-          
-          {/* Camera controls */}
-          <View style={styles.controlsContainer}>
-            <View style={styles.controlsRow}>
-              <TouchableOpacity style={styles.flipButton}>
-                <Ionicons name="camera-reverse" size={28} color="#FFFFFF" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.captureButton}
-                onPress={handleCapture}
-                disabled={isCapturing}
-              >
-                <Animated.View 
-                  style={[
-                    styles.captureButtonInner,
-                    { opacity: shutterAnimation }
-                  ]}
-                />
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.flashButton}>
-                <Ionicons name="flash-off" size={28} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.captureHint}>
-              Take a selfie with {partnerName}
-            </Text>
-          </View>
-        </View>
-      )}
-    </SafeAreaView>
-  );
-};
 
+  // --- Camera Actions ---
+
+  // Take Picture Function (with Animation)
+  const takePicture = async () => {
+    console.log("takePicture called.");
+    // Ensure ref exists and we are in picture mode
+    if (!ref.current || mode !== 'picture') {
+        console.warn("takePicture: Ref not ready or not in picture mode.");
+        return;
+    }
+
+    console.log("Starting shutter animation.");
+    // Start shutter animation (fade out, then back in)
+    Animated.sequence([
+      Animated.timing(shutterAnimation, {
+        toValue: 0,         // Target opacity 0 (fade out)
+        duration: 100,      // Duration of fade out
+        useNativeDriver: true, // Use native driver for performance
+      }),
+      Animated.timing(shutterAnimation, {
+        toValue: 1,         // Target opacity 1 (fade back in)
+        duration: 200,      // Duration of fade in
+        useNativeDriver: true,
+      }),
+    ]).start(); // Don't await the animation, let it run while capturing
+
+    try {
+      console.log("Calling ref.current.takePictureAsync()...");
+      const photo = await ref.current.takePictureAsync();
+      console.log("Picture taken successfully. URI:", photo?.uri);
+      setUri(photo?.uri);
+      setIsVideoPreview(false); // It's a photo preview
+      // Automatically try to save after taking
+      saveMedia(photo?.uri, 'photo');
+    } catch (error) {
+        console.error("Error taking picture: ", error); // Log the full error
+        Alert.alert("Error", "Could not take picture.");
+        // Reset animation in case of error? Generally not needed as it completes.
+        // shutterAnimation.setValue(1);
+    }
+  };
+
+  // Record Video Function
+  const recordVideo = async () => {
+    console.log(`recordVideo called. Currently recording: ${recording}`);
+    if (!ref.current) {
+        console.warn("recordVideo: Ref not ready.");
+        return;
+    }
+
+    // If currently recording, stop recording
+    if (recording) {
+      console.log("Stopping recording...");
+      setRecording(false);
+      ref.current.stopRecording(); // stopRecording resolves the recordAsync promise below
+      console.log("stopRecording called.");
+      return;
+    }
+
+    // Start recording
+    setRecording(true);
+    console.log("Starting recording...");
+    try {
+        // Start recording and wait for the promise to resolve (when stopRecording is called)
+        const recordingPromise = ref.current.recordAsync();
+        console.log("recordAsync called, awaiting promise resolution...");
+        const video = await recordingPromise;
+        console.log("Recording finished (promise resolved). URI:", video?.uri);
+        setUri(video?.uri);
+        setIsVideoPreview(true); // It's a video preview
+        // Automatically try to save after recording stops
+        saveMedia(video?.uri, 'video');
+
+    } catch (error) {
+        console.error("Error recording video: ", error); // Log the full error
+        Alert.alert("Error", "Could not record video.");
+        setRecording(false); // Reset recording state on error
+    }
+  };
+
+  // --- UI Toggles ---
+
+  // Toggle between Picture and Video mode
+  const toggleMode = () => {
+    console.log("toggleMode called.");
+    setMode((prev) => {
+        const nextMode = prev === "picture" ? "video" : "picture";
+        console.log(`Mode changing from ${prev} to ${nextMode}`);
+        return nextMode;
+    });
+  };
+
+  // Toggle between Front and Back camera
+  const toggleFacing = () => {
+    console.log("toggleFacing called.");
+    setFacing((prev) => {
+        const nextFacing = prev === "back" ? "front" : "back";
+        console.log(`Facing changing from ${prev} to ${nextFacing}`);
+        return nextFacing;
+    });
+  };
+
+  const handleRetake = () => {
+    console.log("handleRetake called.");
+    // --- Introduce Delay ---
+    // Wrap the state update in a short timeout
+    setTimeout(() => {
+        console.log("handleRetake: Setting uri to null after delay.");
+        setUri(null);
+        // Reset video/photo flag might be good practice here too
+        setIsVideoPreview(false);
+        console.log("handleRetake: setUri(null) called, component should re-render with camera.");
+    }, 1000); // 100ms delay (adjust if needed, 50-150ms is typical)
+  };
+  // --- Render Functions ---
+
+  // Render Preview Screen (after taking photo/video)
+  const renderPreview = () => {
+    console.log("Rendering Preview Screen. URI:", uri, "IsVideo:", isVideoPreview);
+    return (
+      <View style={styles.previewContainer}>
+        {/* Conditional rendering for Image or Video placeholder */}
+        {isVideoPreview ? (
+            <View style={styles.videoPreview}>
+                <Feather name="video" size={100} color="black" />
+                <Text style={{marginTop: 10}}>Video Recorded</Text>
+                <Text style={{fontSize: 10, color: 'grey'}}>(Check Gallery)</Text>
+            </View>
+        ) : (
+          <Image
+            source={{ uri }} // uri should be valid string here
+            contentFit="contain"
+            style={styles.previewImage}
+            onError={(e) => console.error("Error loading preview image:", e.error)} // Add error handler for Image
+          />
+        )}
+
+        {/* Display the captured media URI */}
+        {uri && (
+            <View style={styles.uriContainer}>
+                <Text style={styles.uriLabel}>Media URI:</Text>
+                {/* Make the URI text selectable */}
+                <Text style={styles.uriText} selectable={true}>
+                    {uri}
+                </Text>
+            </View>
+        )}
+
+        {/* Button to go back to camera */}
+        <View style={styles.previewButtonContainer}>
+           <Button onPress={handleRetake} title={isVideoPreview ? "Record Another Video" : "Take Another Picture"} />
+           {/* Optional: Add a manual save button if needed */}
+           {/* <Button onPress={() => saveMedia(uri, isVideoPreview ? 'video' : 'photo')} title="Save Again" /> */}
+        </View>
+      </View>
+    );
+  };
+
+  // Render Camera Screen
+  const renderCamera = () => {
+    console.log("Rendering CameraView component START.");
+    try { // Wrap in try/catch for potential render errors, though less common
+        return (
+          <CameraView
+            style={styles.camera}
+            ref={ref}
+            mode={mode}
+            facing={facing}
+            enableAudio={mode === 'video'} // Enable audio only for video mode
+            responsiveOrientationWhenOrientationLocked
+            // --- Add logging for camera lifecycle events ---
+            onCameraReady={() => console.log("CameraView: Event -> onCameraReady")}
+            onMountError={(error) => console.error("CameraView: Event -> onMountError", error)} // Crucial for debugging crashes
+            // ---
+          >
+            {/* Bottom controls container */}
+            <View style={styles.shutterContainer}>
+              {/* Mode Toggle Button */}
+              <Pressable onPress={toggleMode} disabled={recording} style={styles.controlButton}>
+                {mode === "picture" ? (
+                  <AntDesign name="picture" size={32} color={recording ? "grey" : "white"} />
+                ) : (
+                  <Feather name="video" size={32} color={recording ? "grey" : "white"} />
+                )}
+              </Pressable>
+
+              {/* Shutter Button */}
+              <Pressable onPress={mode === "picture" ? takePicture : recordVideo}>
+                {({ pressed }) => (
+                  <View
+                    style={[
+                      styles.shutterBtn,
+                      {
+                        opacity: pressed ? 0.7 : 1, // General pressed feedback
+                        borderColor: recording ? "red" : "white", // Red border when recording
+                      },
+                    ]}
+                  >
+                    {/* Inner part of the shutter button - Animated for picture mode */}
+                    <Animated.View // Use Animated.View for opacity animation
+                      style={[
+                        styles.shutterBtnInner,
+                        {
+                          backgroundColor: mode === "picture" ? "white" : "red",
+                          // Dynamic styling for video recording state
+                          borderRadius: recording ? 10 : (mode === 'picture' ? 35 : 35), // Square when recording video, circle otherwise
+                          width: recording ? 35 : 70,
+                          height: recording ? 35 : 70,
+                          // Apply shutterAnimation opacity ONLY in picture mode
+                          opacity: mode === 'picture' ? shutterAnimation : 1,
+                        },
+                      ]}
+                    />
+                  </View>
+                )}
+              </Pressable>
+
+              {/* Facing Toggle Button */}
+              <Pressable onPress={toggleFacing} disabled={recording} style={styles.controlButton}>
+                <FontAwesome6 name="rotate-left" size={32} color={recording ? "grey" : "white"} />
+              </Pressable>
+            </View>
+          </CameraView>
+        );
+    } catch (renderError) {
+        console.error("Error rendering CameraView component:", renderError);
+        return <Text>Error rendering camera. Please check logs.</Text>; // Fallback UI
+    } finally {
+        console.log("Rendering CameraView component END.");
+    }
+  };
+
+  // --- Main Return ---
+  console.log("App component render END. Determining view based on URI:", uri);
+  return (
+    <View style={styles.container}>
+      {/* Conditionally render Preview or Camera based on URI state */}
+      {uri ? renderPreview() : renderCamera()}
+    </View>
+  );
+}
+
+// --- Styles ---
 const styles = StyleSheet.create({
-  cameraContainer: {
+  container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: "#000", // Use black background for camera view consistency
+    alignItems: "center",
+    justifyContent: "center",
   },
-  mockCameraView: {
-    position: 'absolute',
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    top: 0,
-    left: 0,
-  },
-  frontCameraPreview: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    width: 100,
-    height: 100,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    overflow: 'hidden',
-    backgroundColor: '#333',
-  },
-  frontPreviewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  headerContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingTop: 50,
+  permissionText: {
+    textAlign: "center",
+    marginBottom: 10,
     paddingHorizontal: 20,
+    color: 'white', // Ensure text is visible on black background
   },
-  closeButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  pairingInfo: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  pairingTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  timeRemaining: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: '#FFFFFF',
-    marginTop: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  controlsContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-    paddingBottom: 50,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  flipButton: {
-    width: 50,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captureButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captureButtonInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FFFFFF',
-  },
-  flashButton: {
-    width: 50,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captureHint: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 16,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+  camera: {
+    flex: 1,
+    width: "100%", // Camera should fill the screen width
   },
   previewContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  previewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  previewButtonText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.text,
-    marginLeft: 8,
-  },
-  privacyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: COLORS.backgroundLight,
-  },
-  privateActive: {
-    backgroundColor: COLORS.primary,
-  },
-  privacyButtonText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginLeft: 4,
-  },
-  privateActiveText: {
-    color: '#FFFFFF',
-  },
-  imagesContainer: {
     width: '100%',
-    padding: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0', // Lighter background for preview area
   },
   previewImage: {
-    width: '100%',
-    height: 400,
-    borderRadius: 12,
-    marginBottom: 8,
+    width: '90%', // Leave some margin
+    aspectRatio: 3 / 4, // Common photo aspect ratio, adjust if needed
+    backgroundColor: '#ddd', // Placeholder background while loading
   },
-  imageDivider: {
-    height: 16,
-  },
-  previewInfo: {
-    padding: 16,
-    marginBottom: 100,
-  },
-  previewTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 20,
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  previewDescription: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    lineHeight: 24,
-  },
-  saveButton: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
+  videoPreview: {
+    width: '90%',
+    aspectRatio: 3 / 4, // Match image aspect ratio
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#e0e0e0', // Slightly different background for video placeholder
+    borderRadius: 10,
   },
-  saveButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: '#FFFFFF',
+  uriContainer: {
+    marginTop: 15, // Space above URI
+    marginBottom: 20, // Space below URI, before button
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    maxWidth: '90%', // Prevent very long URIs from overflowing badly
+  },
+  uriLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  uriText: {
+    fontSize: 11, // Smaller font for potentially long URIs
+    color: '#555',
+    textAlign: 'center',
+    // Consider adding line breaks for very long URIs if needed
+    // wordBreak: 'break-all', // Not standard in React Native Text, handle manually if required
+  },
+  previewButtonContainer: {
+    // Add styling here if you need to position the button differently
+  },
+  shutterContainer: {
+    position: "absolute",
+    bottom: 40, // Adjust vertical position as needed
+    left: 0,
+    width: "100%",
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-around", // Distribute controls evenly
+    paddingHorizontal: 20, // Padding on the sides
+    backgroundColor: 'rgba(0,0,0,0.3)', // Semi-transparent background for controls
+    paddingVertical: 15, // Vertical padding for the control bar
+    zIndex: 10, // Ensure controls are above the camera view
+  },
+  // Style for side control buttons (mode/facing toggle) for consistent sizing/touch area
+  controlButton: {
+      padding: 10, // Add padding to increase touchable area
+  },
+  shutterBtn: {
+    backgroundColor: "transparent", // Outer ring is transparent
+    borderWidth: 4, // Thickness of the outer ring
+    borderColor: "white", // Default border color
+    width: 80, // Size of the outer ring
+    height: 80,
+    borderRadius: 40, // Make it a circle
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shutterBtnInner: {
+    // Inner button styles (width, height, borderRadius, backgroundColor, opacity)
+    // are applied dynamically within the Animated.View component based on mode/recording state.
   },
 });
-
-export default CameraScreen;

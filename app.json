@@ -32,8 +32,7 @@
         "WRITE_EXTERNAL_STORAGE"
       ]
     },
-    "web": {
-    },
+    "web": {},
     "plugins": [
       [
         "expo-camera",
@@ -60,12 +59,15 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#990000",
-          "sounds": ["./assets/notification-sound.wav"]
+          "sounds": [
+            "./assets/notification-sound.wav"
+          ]
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "scheme": "dailymeetup",
-    "sdkVersion": "52.0.0",
     "primaryColor": "#990000"
   }
 }
