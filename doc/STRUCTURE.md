@@ -53,7 +53,8 @@ This document outlines the current project directory structure of the Daily Meet
 │   │   │   └── CameraPreview.tsx # Component for previewing the captured single photo
 │   │   ├── feed/               # Feed components
 │   │   │   ├── FeedList.tsx
-│   │   │   └── EmptyFeed.tsx
+│   │   │   ├── PostCard.tsx    # Display for a completed pairing
+│   │   │   └── EmptyFeed.tsx   # Handles "Less than 5 friends" and "No Selfies Yet" states
 │   │   ├── comments/           # Comment components
 │   │   │   ├── CommentList.tsx
 │   │   │   └── CommentInput.tsx
@@ -211,17 +212,19 @@ This document outlines the current project directory structure of the Daily Meet
 
 1. **Single Camera System**: Uses expo-camera with the `useCamera` hook and `Camera.tsx` component.
 2. **Robust Firebase Integration**: Centralizes Firebase access through the `firebase.ts` service with initialization in `firebaseInit.ts` and context provision via `FirebaseProvider.tsx`. Includes fallback mechanisms for handling initialization failures.
-3. **Enhanced User Model**: Includes fields for flake streak tracking, notification settings, and blocked users.
+3. **Enhanced User Model**: Includes fields for flake streak tracking, notification settings, friend connections, and blocked users.
 4. **Organized Component Structure**: Components are organized by functionality (camera, feed, profile, etc.).
 5. **Cloud Functions**: Firebase Cloud Functions handle pairing algorithm and notifications.
-6. **Optimized Feed System**: Uses an efficient data structure for better performance.
-7. **Camera Utilities**: Camera-related utilities are organized in both top-level and subfolder locations.
-8. **Black and White Theme**: App-wide dark theme with white accents for a modern, premium feel.
-9. **Consistent Onboarding Flow**: Smooth, progressive onboarding experience with animated transitions.
-10. **Daily Pairing Experience**: Sleek daily pairing confirmation screen with user profiles and direct chat access.
-11. **Modern Chat Interface**: Black and white themed chat with minimalist design and seamless camera integration.
-12. **Error-Resilient Authentication**: Authentication system that gracefully handles initialization issues and provides fallbacks.
-13. **Real Firebase Authentication**: App now conditionally shows authentication screens or main app content based on the user's authenticated state. Uses real Firebase Authentication with Stanford email validation.
+6. **Friend Connection System**: Users can add friends via mutual connections, with friendship status persisted in Firestore.
+7. **Optimized Feed System**: Uses an efficient data structure for better performance.
+8. **Camera Utilities**: Camera-related utilities are organized in both top-level and subfolder locations.
+9. **Black and White Theme**: App-wide dark theme with white accents for a modern, premium feel.
+10. **Consistent Onboarding Flow**: Smooth, progressive onboarding experience with animated transitions.
+11. **Daily Pairing Experience**: Sleek daily pairing confirmation screen with user profiles and direct chat access.
+12. **Modern Chat Interface**: Black and white themed chat with minimalist design and seamless camera integration.
+13. **Error-Resilient Authentication**: Authentication system that gracefully handles initialization issues and provides fallbacks.
+14. **Real Firebase Authentication**: App now conditionally shows authentication screens or main app content based on the user's authenticated state. Uses real Firebase Authentication with Stanford email validation.
+15. **Empty State Screens**: Refined empty state screens for various user situations including "Less than 5 friends", "No Match Today", and "No Selfies Yet".
 
 ## Key Component and Hook Details
 

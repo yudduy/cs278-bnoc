@@ -101,11 +101,13 @@ const DailyPairingScreen: React.FC = () => {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No daily pairing available yet.</Text>
+          <Text style={styles.emptyLogo}>BNOC</Text>
+          <Text style={styles.noMatchTitle}>No new match for you today.</Text>
+          <Text style={styles.noMatchSubtitle}>Check back tomorrow for your next BNOC connection!</Text>
+          <Ionicons name="calendar-outline" size={48} color={COLORS.primary} style={styles.calendarIcon} />
           <SecondaryButton
             text="Go Home"
             onPress={handleGoHome}
-            icon="home-outline"
           />
         </View>
       </SafeAreaView>
@@ -211,12 +213,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
   },
-  emptyText: {
+  emptyLogo: {
+    fontFamily: FONTS.bold,
+    fontSize: 24,
     color: COLORS.primary,
+    marginBottom: 32,
+    letterSpacing: 1,
+  },
+  noMatchTitle: {
+    fontFamily: FONTS.bold,
+    fontSize: 22, 
+    color: COLORS.primary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  noMatchSubtitle: {
     fontFamily: FONTS.regular,
     fontSize: 16,
-    marginBottom: 24,
+    color: COLORS.primary,
+    marginBottom: 32,
     textAlign: 'center',
+  },
+  calendarIcon: {
+    marginBottom: 40,
+    marginTop: 16,
   },
   welcomeMessage: {
     fontFamily: FONTS.bold,

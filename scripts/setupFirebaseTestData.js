@@ -4,24 +4,24 @@ const { v4: uuidv4 } = require('uuid'); // For generating pairing IDs
 // IMPORTANT: Replace with the actual path to your Firebase Admin SDK service account key
 // Ensure this file is NOT committed to your repository if it's public.
 // Download from Firebase Console: Project settings > Service accounts > Generate new private key
-const serviceAccount = require('./<YOUR_SERVICE_ACCOUNT_KEY_FILENAME>.json');
+const serviceAccount = require('../serviceAccountKey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
 const db = admin.firestore();
-const auth = admin.auth();
 
+// Modified users array - now storing passwords directly in Firestore
+// and not using Firebase Auth at all
 const usersToCreate = [
   {
     id: 'user1',
-    email: 'duy@stanford.edu',
-    password: 'password123', // Set a temporary password
+    email: 'duynguy@stanford.edu',
+    password: 'password123', // Now stored directly in Firestore
     username: 'duy',
     displayName: 'Duy Nguyen',
     photoURL: 'https://firebasestorage.googleapis.com/v0/b/bnoc-app-57647.appspot.com/o/profile_images%2Fduy.jpg?alt=media&token=d8e9a0a8-2f2e-4d95-8c88-1c63c303a08b',
-    // ... other fields from FIREBASE.md matching User type
     isActive: true,
     flakeStreak: 0,
     maxFlakeStreak: 0,
@@ -42,7 +42,7 @@ const usersToCreate = [
   },
   {
     id: 'user2',
-    email: 'justin@stanford.edu',
+    email: 'jleong22@stanford.edu',
     password: 'password123',
     username: 'justin',
     displayName: 'Justin Leong',
@@ -61,66 +61,47 @@ const usersToCreate = [
     isActive: true, flakeStreak: 0, maxFlakeStreak: 0, connections: [], blockedIds: [], snoozeTokensRemaining: 1,
     notificationSettings: { pairingNotification: true, chatNotification: true, reminderNotification: true, socialNotification: true, completionNotification: true, quietHoursStart: 22, quietHoursEnd: 8 },
     privacySettings: { globalFeedOptIn: true }, fcmToken: 'dummy_fcm_token_user3',
-  },
-  {
-    id: 'user4',
-    email: 'vivian@stanford.edu',
-    password: 'password123',
-    username: 'vivian',
-    displayName: 'Vivian Zhou',
-    photoURL: 'https://firebasestorage.googleapis.com/v0/b/bnoc-app-57647.appspot.com/o/profile_images%2Fvivian.jpg?alt=media&token=6f8b0c5a-1e2d-4f8a-9c7b-3a0d8c1e4f5b',
-    isActive: true, flakeStreak: 0, maxFlakeStreak: 0, connections: [], blockedIds: [], snoozeTokensRemaining: 1,
-    notificationSettings: { pairingNotification: true, chatNotification: true, reminderNotification: true, socialNotification: true, completionNotification: true, quietHoursStart: 22, quietHoursEnd: 8 },
-    privacySettings: { globalFeedOptIn: true }, fcmToken: 'dummy_fcm_token_user4',
-  },
+  }
 ];
 
+// Modified to create users without Firebase Auth
 const createUsers = async () => {
-  console.log('Starting user creation...');
+  console.log('Starting user creation (direct Firestore approach)...');
   for (const userData of usersToCreate) {
-    const { id, email, password, username, displayName, photoURL, ...firestoreData } = userData;
+    const { id, ...firestoreData } = userData;
     try {
-      // Create user in Firebase Auth
-      const userRecord = await auth.createUser({
-        uid: id,
-        email: email,
-        password: password,
-        displayName: displayName,
-        photoURL: photoURL,
-        emailVerified: true, // Assuming Stanford emails are pre-verified for testing
-      });
-      console.log(`Successfully created auth user: ${userRecord.uid} (${email})`);
-
-      // Create user document in Firestore
-      await db.collection('users').doc(id).set({
-        id: id, // Ensure id is part of the document data
-        email: email,
-        username: username,
-        displayName: displayName,
-        photoURL: photoURL,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-        ...firestoreData, // Spread the rest of the data (isActive, settings, etc.)
-      });
-      console.log(`Successfully created Firestore user document for: ${id}`);
-    } catch (error) {
-      if (error.code === 'auth/uid-already-exists' || error.code === 'auth/email-already-exists') {
-        console.warn(`Auth user ${id} (${email}) likely already exists. Skipping auth creation.`);
-        // Still try to create/update Firestore doc if auth user exists
-        try {
-            await db.collection('users').doc(id).set({
-                id: id, email, username, displayName, photoURL,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(), // Or use existing if updating
-                lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-                ...firestoreData
-            }, { merge: true }); // Use merge to avoid overwriting if only updating
-            console.log(`Updated/verified Firestore user document for: ${id}`);
-        } catch (dbError) {
-            console.error(`Error creating/updating Firestore document for existing auth user ${id}:`, dbError);
-        }
-      } else {
-        console.error(`Error creating user ${id} (${email}):`, error);
+      // Check if user already exists in Firestore by email
+      const userByEmailQuery = await db.collection('users')
+        .where('email', '==', userData.email)
+        .get();
+      
+      if (!userByEmailQuery.empty) {
+        console.warn(`User with email ${userData.email} already exists. Skipping...`);
+        continue;
       }
+      
+      // Check if user already exists in Firestore by username
+      const userByUsernameQuery = await db.collection('users')
+        .where('username', '==', userData.username)
+        .get();
+      
+      if (!userByUsernameQuery.empty) {
+        console.warn(`User with username ${userData.username} already exists. Skipping...`);
+        continue;
+      }
+
+      // Create user document with password directly in Firestore
+      await db.collection('users').doc(id).set({
+        id: id, // Include ID in the document data
+        ...firestoreData, // Include all user data including password
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastActive: admin.firestore.FieldValue.serverTimestamp(),
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      console.log(`Successfully created user: ${id} (${userData.email})`);
+    } catch (error) {
+      console.error(`Error creating user ${id} (${userData.email}):`, error);
     }
   }
   console.log('User creation process finished.\n');
@@ -139,20 +120,20 @@ const createTestPairings = async () => {
       status: 'pending',
     },
     {
-      // Pairing 2: user3 and user4, user3 submitted
+      // Pairing 2: user3 and user1, user3 submitted
       user1_id: 'user3', 
-      user2_id: 'user4',
+      user2_id: 'user1',
       status: 'user1_submitted',
       user1_photoURL: 'https://firebasestorage.googleapis.com/v0/b/bnoc-app-57647.appspot.com/o/sample_photos%2Fkelvin_sample.jpg?alt=media&token=a1b2c3d4-e5f6-7890-1234-abcdef123456', // Placeholder submitted photo
       user1_submittedAt: admin.firestore.Timestamp.fromDate(new Date(today.getTime() - (60 * 60 * 1000))), // 1 hour ago
     },
     {
-      // Pairing 3: user1 and user3, user2 (user3) submitted - to test logic if user1 is user2_id in a pairing
-      user1_id: 'user4', // Let's make user4 as user1 in this pairing for variety
-      user2_id: 'user1',
-      status: 'user2_submitted', 
-      user2_photoURL: 'https://firebasestorage.googleapis.com/v0/b/bnoc-app-57647.appspot.com/o/sample_photos%2Fduy_sample.jpg?alt=media&token=b2c3d4e5-f6a7-8901-2345-bcdefa123456', // Placeholder submitted photo for user1 (acting as user2)
-      user2_submittedAt: admin.firestore.Timestamp.fromDate(new Date(today.getTime() - (2 * 60 * 60 * 1000))), // 2 hours ago
+      // Pairing 3: user2 and user3, user2 submitted
+      user1_id: 'user2',
+      user2_id: 'user3',
+      status: 'user1_submitted', 
+      user1_photoURL: 'https://firebasestorage.googleapis.com/v0/b/bnoc-app-57647.appspot.com/o/sample_photos%2Fjustin_sample.jpg?alt=media&token=b2c3d4e5-f6a7-8901-2345-bcdefa123456',
+      user1_submittedAt: admin.firestore.Timestamp.fromDate(new Date(today.getTime() - (2 * 60 * 60 * 1000))), // 2 hours ago
     }
   ];
 
@@ -183,6 +164,19 @@ const createTestPairings = async () => {
     };
 
     try {
+      // Create chat room document
+      const chatRoom = {
+        id: newPairing.chatId,
+        pairingId: pairingId,
+        userIds: [pData.user1_id, pData.user2_id],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastMessage: null,
+        lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      
+      await db.collection('chatRooms').doc(newPairing.chatId).set(chatRoom);
+      
+      // Create pairing document
       await db.collection('pairings').doc(pairingId).set(newPairing);
       console.log(`Successfully created pairing ${pairingId} between ${pData.user1_id} and ${pData.user2_id}. Status: ${pData.status}`);
     } catch (error) {
@@ -193,7 +187,7 @@ const createTestPairings = async () => {
 };
 
 const main = async () => {
-  console.log('--- Firebase Test Data Setup Script ---');
+  console.log('--- Firebase Test Data Setup Script (Direct Firestore Auth) ---');
   await createUsers();
   await createTestPairings();
   console.log('--- Script Finished ---');
@@ -203,4 +197,4 @@ const main = async () => {
 main().catch(error => {
   console.error("Unhandled error in main script execution:", error);
   process.exit(1);
-}); 
+});

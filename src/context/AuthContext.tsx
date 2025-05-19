@@ -1,13 +1,10 @@
 /**
- * AuthContext
+ * AuthContext - Simplified Version
  * 
- * Context for managing user authentication - fixed for proper Firebase Auth integration.
+ * Context for managing user authentication using direct Firestore queries instead of Firebase Auth.
  */
 
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { Timestamp } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../config/firebase';
 import { User } from '../types/user';
 import * as authService from '../services/authService';
 
@@ -44,94 +41,35 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-// AuthProvider component - real Firebase Auth integration
+// AuthProvider component - simplified implementation
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  // Using real authentication state
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // Set to true initially while we check auth state
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Subscribe to Firebase auth state changes
+  // Load stored authentication on mount
   useEffect(() => {
-    console.log("AuthContext subscribing to auth state changes");
-    let unsubscribe: (() => void) | undefined;
-    
-    // If auth is not initialized properly, set loading to false after a timeout
-    const authFallbackTimer = setTimeout(() => {
-      console.log("AuthContext: Fallback timer triggered, setting loading to false");
-      setIsLoading(false);
-    }, 2000);
-    
-    try {
-      // Set up auth state listener
-      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        console.log("Auth state change detected in AuthContext:", firebaseUser?.uid);
+    const loadAuth = async () => {
+      try {
+        console.log('Loading stored authentication');
+        const storedUser = await authService.loadStoredAuth();
         
-        // Clear the fallback timer as we got a response
-        clearTimeout(authFallbackTimer);
-        
-        if (firebaseUser) {
-          try {
-            // Fetch user profile from Firestore
-            const userProfile = await authService.getUserProfile(firebaseUser.uid);
-            
-            if (userProfile) {
-              setUser(userProfile);
-              setIsAuthenticated(true);
-            } else {
-              console.log('User authenticated but no document found:', firebaseUser.uid);
-              // Create a minimal user profile if document not found
-              const minimalUser: User = {
-                id: firebaseUser.uid,
-                email: firebaseUser.email || '',
-                username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'user',
-                displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-                createdAt: Timestamp.now(),
-                lastActive: Timestamp.now(),
-                isActive: true,
-                flakeStreak: 0,
-                maxFlakeStreak: 0,
-                connections: [],
-                notificationSettings: {
-                  pairingNotification: true,
-                  reminderNotification: true,
-                  chatNotification: true,
-                  partnerPhotoSubmittedNotification: true,
-                  socialNotifications: true,
-                  quietHoursStart: 22,
-                  quietHoursEnd: 8
-                },
-                blockedIds: [],
-              };
-              setUser(minimalUser);
-              setIsAuthenticated(true);
-            }
-          } catch (error) {
-            console.error('Error fetching user document:', error);
-            setUser(null);
-            setIsAuthenticated(false);
-          }
+        if (storedUser) {
+          console.log('Found stored user:', storedUser.id);
+          setUser(storedUser);
+          setIsAuthenticated(true);
         } else {
-          // No user is signed in
-          setUser(null);
-          setIsAuthenticated(false);
+          console.log('No stored authentication found');
         }
-        
+      } catch (err) {
+        console.error('Error loading authentication:', err);
+      } finally {
         setIsLoading(false);
-      });
-    } catch (error) {
-      console.error("Error setting up auth state listener:", error);
-      setUser(null);
-      setIsAuthenticated(false);
-      setIsLoading(false); // Ensure loading is set to false on error
-      clearTimeout(authFallbackTimer);
-    }
-    
-    return () => {
-      if (unsubscribe) unsubscribe();
-      clearTimeout(authFallbackTimer);
+      }
     };
+    
+    loadAuth();
   }, []);
   
   // Sign in method
@@ -140,22 +78,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(true);
       setError(null);
       
-      const result = await authService.signIn(email, password);
-      setUser(result.user);
+      const userData = await authService.signIn(email, password);
+      
+      setUser(userData);
       setIsAuthenticated(true);
     } catch (err: any) {
       console.error('Sign in error:', err);
       
-      // Provide a more user-friendly error message
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-        setError('Invalid email or password. Please try again.');
-      } else if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email. Please sign up first.');
-      } else if (err.code === 'auth/too-many-requests') {
-        setError('Too many failed attempts. Please try again later.');
-      } else {
-        setError(err.message || 'Failed to sign in. Please try again.');
-      }
+      // Set error message
+      setError(err.message || 'Failed to sign in. Please try again.');
       
       setUser(null);
       setIsAuthenticated(false);
@@ -177,20 +108,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
       
-      const result = await authService.signUp(email, password, username);
-      setUser(result.user);
+      const userData = await authService.signUp(email, password, username);
+      
+      setUser(userData);
       setIsAuthenticated(true);
     } catch (err: any) {
       console.error('Sign up error:', err);
       
-      // Provide a more user-friendly error message
-      if (err.code === 'auth/email-already-in-use') {
-        setError('This email is already in use. Try signing in instead.');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password is too weak. Please use a stronger password.');
-      } else {
-        setError(err.message || 'Failed to create account. Please try again.');
-      }
+      // Set error message
+      setError(err.message || 'Failed to create account. Please try again.');
       
       setUser(null);
       setIsAuthenticated(false);
@@ -202,17 +128,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Sign out method
   const signOut = async () => {
     try {
+      setIsLoading(true);
       await authService.signOut();
       
-      // Let the auth state listener handle the state update
-      // It will automatically set user to null and isAuthenticated to false
+      // Update state
+      setUser(null);
+      setIsAuthenticated(false);
     } catch (err: any) {
       console.error('Sign out error:', err);
       setError(err.message || 'Failed to sign out');
-      
-      // Force sign out state even if there's an error
-      setUser(null);
-      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -225,13 +151,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await authService.resetPassword(email);
     } catch (err: any) {
       console.error('Password reset error:', err);
-      
-      // Provide a more user-friendly error message
-      if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email.');
-      } else {
-        setError(err.message || 'Failed to send password reset email');
-      }
+      setError(err.message || 'Failed to send password reset email');
     } finally {
       setIsLoading(false);
     }
@@ -245,15 +165,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     
     try {
-      // Let authService handle the update
-      const updatedProfile = await authService.getUserProfile(user.id);
+      setIsLoading(true);
+      // In a real app, you would update the user profile in the database
+      // For this simplified version, we're just updating local state
       
-      if (updatedProfile) {
-        setUser(updatedProfile);
-      }
+      // Update local state
+      const updatedUser = { ...user, ...data };
+      setUser(updatedUser);
+      
+      // In a real app, you would also update AsyncStorage
     } catch (err: any) {
       console.error('Profile update error:', err);
       setError(err.message || 'Failed to update profile');
+    } finally {
+      setIsLoading(false);
     }
   };
   

@@ -3,6 +3,7 @@
  * 
  * Implements the daily pairing algorithm that matches users,
  * avoiding recent repeats and respecting user preferences.
+ * Prioritizes pairing users with their friends when possible.
  */
 
 import * as admin from 'firebase-admin';
@@ -20,6 +21,7 @@ export interface User {
   flakeStreak: number;
   maxFlakeStreak: number;
   blockedIds: string[];
+  connections: string[]; // Friend connections
   priorityNextPairing?: boolean;
   waitlistedToday?: boolean;
   waitlistedAt?: Timestamp;
@@ -69,7 +71,7 @@ export const getPairingHistory = async (days: number): Promise<PairingHistory[]>
 };
 
 /**
- * Create pairings while avoiding recent repeats
+ * Create pairings while avoiding recent repeats and prioritizing friend connections
  */
 export const createPairings = (
   users: User[], 
@@ -113,25 +115,57 @@ export const createPairings = (
     // Try to find a suitable partner
     let foundPartner = false;
     
-    for (let j = 0; j < users.length; j++) {
-      if (i === j) continue;
+    // First, try to pair with friends (from connections array)
+    const friends = user1.connections || [];
+    
+    // Shuffle friends to avoid always pairing with the same friend
+    const shuffledFriends = shuffleArray(friends);
+    
+    // Try to find a friend to pair with first
+    for (const friendId of shuffledFriends) {
+      const friendIndex = users.findIndex(u => u.id === friendId);
+      if (friendIndex === -1) continue; // Friend not in active users
       
-      const user2 = users[j];
+      const friend = users[friendIndex];
       
       // Skip if already paired or blocked
-      if (paired.has(user2.id)) continue;
-      if (user1.blockedIds?.includes(user2.id) || user2.blockedIds?.includes(user1.id)) continue;
+      if (paired.has(friend.id)) continue;
+      if (user1.blockedIds?.includes(friend.id) || friend.blockedIds?.includes(user1.id)) continue;
       
       // Skip if recently paired
       const recentPartners1 = recentPairings.get(user1.id) || new Set();
-      if (recentPartners1.has(user2.id)) continue;
+      if (recentPartners1.has(friend.id)) continue;
       
-      // Create pairing
-      pairings.push({ user1, user2 });
+      // Create pairing with friend
+      pairings.push({ user1, user2: friend });
       paired.add(user1.id);
-      paired.add(user2.id);
+      paired.add(friend.id);
       foundPartner = true;
       break;
+    }
+    
+    // If no friend was available, try with non-friends
+    if (!foundPartner) {
+      for (let j = 0; j < users.length; j++) {
+        if (i === j) continue;
+        
+        const user2 = users[j];
+        
+        // Skip if already paired or blocked
+        if (paired.has(user2.id)) continue;
+        if (user1.blockedIds?.includes(user2.id) || user2.blockedIds?.includes(user1.id)) continue;
+        
+        // Skip if recently paired
+        const recentPartners1 = recentPairings.get(user1.id) || new Set();
+        if (recentPartners1.has(user2.id)) continue;
+        
+        // Create pairing
+        pairings.push({ user1, user2 });
+        paired.add(user1.id);
+        paired.add(user2.id);
+        foundPartner = true;
+        break;
+      }
     }
     
     // Add to waitlist if no partner found

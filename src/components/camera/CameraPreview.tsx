@@ -93,10 +93,10 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
           disabled={uploading}
         >
           {uploading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color="#000000" />
           ) : (
             <>
-              <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="checkmark-circle-outline" size={20} color="#000000" />
               <Text style={styles.submitButtonText}>Submit</Text>
             </>
           )}
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontFamily: 'ChivoBold',
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#000000',
     marginLeft: 8,
   },
 });

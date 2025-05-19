@@ -1,15 +1,15 @@
 /**
- * FirebaseProvider
+ * FirebaseProvider - Updated for Direct Authentication in React Native
  * 
- * Handles Firebase initialization and ensures auth is ready before
- * rendering child components.
+ * Handles Firebase initialization and authentication state using AsyncStorage
+ * instead of Firebase Auth. Removed web-specific code.
  */
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
-// Import from firebaseInit directly to ensure correct initialization
-import { auth, isFirebaseInitialized, firebaseApp } from '../config/firebaseInit';
-import { onAuthStateChanged } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+// Import from firebaseInit directly, only db and storage now
+import { isFirebaseInitialized, firebaseApp, db, storage } from '../config/firebaseInit';
 
 // For debugging purposes
 console.log('FirebaseProvider module loaded - Firebase initialized:', isFirebaseInitialized());
@@ -33,7 +33,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({ children }) 
   useEffect(() => {
     console.log("FirebaseProvider: Initializing Firebase components");
     
-    let unsubscribe = () => {};
     let mounted = true;
     
     // Use a reasonable fallback timeout for Firebase initialization
@@ -44,61 +43,50 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({ children }) 
       }
     }, 3000);
     
-    try {
-      // Check if Firebase is properly initialized
-      if (!isFirebaseInitialized()) {
-        console.warn("FirebaseProvider: Firebase not fully initialized");
-        if (mounted) {
-          setInitError("Firebase initialization is incomplete. The app may have limited functionality.");
-        }
-      } else {
-        console.log("FirebaseProvider: Firebase is initialized");
-      }
-      
-      // Try to set up auth state listener
+    const initializeFirebase = async () => {
       try {
-        unsubscribe = onAuthStateChanged(
-          auth,
-          (user) => {
-            console.log("FirebaseProvider: Auth state listener successful", user ? "User signed in" : "No user");
-            if (mounted) {
-              setIsFirebaseReady(true);
-              clearTimeout(fallbackTimer);
-            }
-          },
-          (error) => {
-            console.error("FirebaseProvider: Auth state listener error", error);
-            if (mounted) {
-              setInitError(error.message || "Authentication error");
-              // Still mark as ready so the app can show the error state
-              setIsFirebaseReady(true);
-              clearTimeout(fallbackTimer);
-            }
+        // Check if Firebase is properly initialized
+        if (!isFirebaseInitialized()) {
+          console.warn("FirebaseProvider: Firebase not fully initialized");
+          if (mounted) {
+            setInitError("Firebase initialization is incomplete. The app may have limited functionality.");
           }
-        );
-      } catch (authError) {
-        console.error("FirebaseProvider: Error setting up auth state listener:", authError);
+        } else {
+          console.log("FirebaseProvider: Firebase is initialized");
+        }
+        
+        // Check for authenticated user in AsyncStorage
+        try {
+          const storedUser = await AsyncStorage.getItem('authenticatedUser');
+          console.log("FirebaseProvider: Checked AsyncStorage for auth", storedUser ? "User found" : "No user");
+          
+          // We've successfully checked auth state - mark as ready
+          if (mounted) {
+            setIsFirebaseReady(true);
+            clearTimeout(fallbackTimer);
+          }
+        } catch (authError) {
+          console.error("FirebaseProvider: Error checking auth state:", authError);
+          if (mounted) {
+            setInitError("Auth check error: " + String(authError));
+            // Let the fallback timer handle it
+          }
+        }
+      } catch (error) {
+        console.error("FirebaseProvider: Exception during initialization", error);
         if (mounted) {
-          setInitError("Auth initialization error: " + String(authError));
-          // Let the fallback timer handle it
+          setInitError("Initialization error: " + (error instanceof Error ? error.message : String(error)));
+          setIsFirebaseReady(true); // Force ready state on exception
+          clearTimeout(fallbackTimer);
         }
       }
-    } catch (error) {
-      console.error("FirebaseProvider: Exception during initialization", error);
-      if (mounted) {
-        setInitError("Initialization error: " + (error instanceof Error ? error.message : String(error)));
-        setIsFirebaseReady(true); // Force ready state on exception
-        clearTimeout(fallbackTimer);
-      }
-    }
+    };
+
+    // Initialize Firebase
+    initializeFirebase();
 
     return () => {
       mounted = false;
-      try {
-        unsubscribe();
-      } catch (error) {
-        console.error("FirebaseProvider: Error unsubscribing", error);
-      }
       clearTimeout(fallbackTimer);
     };
   }, []);

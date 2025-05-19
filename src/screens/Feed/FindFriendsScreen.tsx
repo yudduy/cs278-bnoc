@@ -95,20 +95,6 @@ const FindFriendsScreen: React.FC = () => {
           username: 'kelvin',
           displayName: 'Kelvin Nguyen',
           photoURL: 'https://picsum.photos/100/100?random=3',
-        },
-        {
-          id: 'user4',
-          email: 'vivian@stanford.edu',
-          username: 'vivian',
-          displayName: 'Vivian Zhou',
-          photoURL: 'https://picsum.photos/100/100?random=4',
-        },
-        {
-          id: 'user5',
-          email: 'michael@stanford.edu',
-          username: 'michael',
-          displayName: 'Michael Bernstein',
-          photoURL: 'https://picsum.photos/100/100?random=5',
         }
       ];
       
@@ -147,7 +133,7 @@ const FindFriendsScreen: React.FC = () => {
   };
   
   /**
-   * Add a user as a connection
+   * Add a user as a connection (mutual friendship)
    */
   const handleAddConnection = async (userId: string) => {
     try {
@@ -158,14 +144,14 @@ const FindFriendsScreen: React.FC = () => {
         throw new Error('User not authenticated');
       }
       
-      // Call the Firebase service to update connection
+      // Call the Firebase service to update connection (mutual)
       await userService.updateConnection(user.id, userId, 'add');
       
       // Update local connections list
       setConnections(prev => [...prev, userId]);
       
       // Show success message
-      Alert.alert('Success', 'Friend added successfully!');
+      Alert.alert('Success', 'Friend added successfully! You are now connected with this user.');
     } catch (error) {
       console.error('Error adding connection:', error);
       Alert.alert('Error', 'Failed to add friend. Please try again.');
@@ -398,10 +384,10 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontFamily: 'ChivoBold',
     fontSize: 14,
-    color: '#000000',
+    color: COLORS.background,
   },
   connectedButton: {
-    backgroundColor: COLORS.success,
+    backgroundColor: 'transparent',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -409,12 +395,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 60,
     borderWidth: 1,
-    borderColor: '#000000',
+    borderColor: COLORS.primary,
   },
   connectedButtonText: {
     fontFamily: 'ChivoBold',
     fontSize: 14,
-    color: '#000000',
+    color: COLORS.primary,
   },
   loadingContainer: {
     flex: 1,

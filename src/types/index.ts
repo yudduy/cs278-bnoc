@@ -1,58 +1,225 @@
 /**
- * Type Definitions
+ * Core Type Definitions
  * 
- * Centralized type definitions for the Daily Meetup Selfie app.
+ * Centralized and optimized type definitions for the app.
+ * This file serves as the main entry point for all type definitions.
  */
 
 import { Timestamp } from 'firebase/firestore';
 
+// -----------------------------
+// USER RELATED TYPES
+// -----------------------------
+
 /**
- * User interface
+ * Base user interface with common properties
  */
-export interface User {
-  id: string;
+export interface BaseUser {
   email: string;
   username: string;
   displayName?: string;
   photoURL?: string;
-  createdAt: Timestamp;
   isActive: boolean;
-  connections: string[];
-  blockedIds: string[];
+}
+
+/**
+ * Complete user interface for app usage
+ */
+export interface User extends BaseUser {
+  id: string; // Firestore document ID
+  createdAt: Timestamp;
+  lastActive: Timestamp;
   flakeStreak: number;
   maxFlakeStreak: number;
-  snoozeTokensRemaining: number;
-  snoozeTokenLastRefilled?: Timestamp;
+  connections: string[];
+  blockedIds: string[];
   notificationSettings: NotificationSettings;
-  privacySettings: PrivacySettings;
   fcmToken?: string;
+  pushToken?: string;
   waitlistedToday?: boolean;
   priorityNextPairing?: boolean;
+  snoozeTokensRemaining?: number;
+  snoozeTokenLastRefilled?: Timestamp;
+  privacySettings?: PrivacySettings;
   lastUpdated?: Timestamp;
 }
 
 /**
- * Notification settings interface
+ * User interface with password for authentication/storage
+ */
+export interface AuthUser extends Omit<User, 'id'> {
+  password: string; // Stored directly in Firestore
+}
+
+/**
+ * User profile for display purposes
+ */
+export interface UserProfile {
+  id: string;
+  username: string;
+  displayName?: string;
+  photoURL?: string;
+  pairingCount: number;
+  flakeStreak: number;
+  maxFlakeStreak: number;
+  joinedAt: Timestamp;
+  lastActive: Timestamp;
+}
+
+/**
+ * User statistics
+ */
+export interface UserStats {
+  totalPairings: number;
+  completedPairings: number;
+  flakedPairings: number;
+  completionRate: number;
+  currentStreak: number;
+  longestStreak: number;
+  totalLikes?: number;
+  totalComments?: number;
+  uniqueConnectionsMade?: number;
+  avgResponseTime?: number;
+}
+
+/**
+ * User settings
+ */
+export interface UserSettings {
+  notificationSettings: NotificationSettings;
+  theme: 'light' | 'dark' | 'system';
+  privacySettings: PrivacySettings;
+}
+
+/**
+ * Privacy settings
+ */
+export interface PrivacySettings {
+  globalFeedOptIn: boolean;
+  autoPrivateMode?: boolean;
+  hideFromDiscovery?: boolean;
+  showOnlyToFriends?: boolean;
+}
+
+/**
+ * Authentication credentials
+ */
+export interface UserCredentials {
+  email: string;
+  password: string;
+}
+
+/**
+ * Registration data
+ */
+export interface UserRegistration extends UserCredentials {
+  username: string;
+  displayName?: string;
+}
+
+/**
+ * Blocked user information
+ */
+export interface BlockedUser {
+  id: string;
+  username: string;
+  displayName?: string;
+  photoURL?: string;
+  blockedAt: Timestamp;
+}
+
+// -----------------------------
+// NOTIFICATION RELATED TYPES
+// -----------------------------
+
+/**
+ * Notification settings
  */
 export interface NotificationSettings {
   pairingNotification: boolean;
   reminderNotification: boolean;
-  completionNotification: boolean;
-  chatNotification?: boolean;
-  socialNotification?: boolean;
-  quietHoursStart: number; // Hour of day (0-23)
-  quietHoursEnd: number; // Hour of day (0-23)
+  chatNotification: boolean;
+  partnerPhotoSubmittedNotification?: boolean;
+  socialNotifications?: boolean;
+  completionNotification?: boolean;
+  quietHoursStart: number; // 0-23 hour (local time)
+  quietHoursEnd: number; // 0-23 hour (local time)
 }
 
 /**
- * Privacy settings interface
+ * Notification types
  */
-export interface PrivacySettings {
-  globalFeedOptIn: boolean;
+export type NotificationType = 'pairing' | 'reminder' | 'completion' | 'like' | 'comment' | 'final_reminder' | 'social';
+
+/**
+ * Push notification
+ */
+export interface PushNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data?: {
+    pairingId?: string;
+    userId?: string;
+    actorId?: string;
+    actorName?: string;
+    commentId?: string;
+    commentText?: string;
+    urgent?: boolean;
+  };
+  createdAt: Timestamp;
+  read: boolean;
 }
 
 /**
- * Pairing interface
+ * Social notification
+ */
+export interface SocialNotification {
+  id: string;
+  type: 'like' | 'comment';
+  actorId: string;
+  recipientId: string;
+  pairingId: string;
+  commentId?: string;
+  commentText?: string;
+  createdAt: Timestamp;
+  read: boolean;
+}
+
+/**
+ * Notification data
+ */
+export interface NotificationData {
+  type: NotificationType;
+  pairingId?: string;
+  senderId?: string;
+  title: string;
+  body: string;
+  data?: any;
+}
+
+/**
+ * Notification token
+ */
+export interface NotificationToken {
+  token: string;
+  platform: 'ios' | 'android' | 'web';
+  device: string;
+  updatedAt: Timestamp;
+}
+
+// -----------------------------
+// PAIRING RELATED TYPES
+// -----------------------------
+
+/**
+ * Pairing status
+ */
+export type PairingStatus = 'pending' | 'user1_submitted' | 'user2_submitted' | 'completed' | 'flaked';
+
+/**
+ * Pairing data
  */
 export interface Pairing {
   id: string;
@@ -60,7 +227,7 @@ export interface Pairing {
   users: string[]; // Array of user IDs involved in the pairing
   user1_id: string;
   user2_id: string;
-  status: 'pending' | 'user1_submitted' | 'user2_submitted' | 'completed' | 'flaked';
+  status: PairingStatus;
   user1_photoURL: string | null;
   user2_photoURL: string | null;
   user1_submittedAt: Timestamp | null;
@@ -77,20 +244,12 @@ export interface Pairing {
   lastUpdatedAt?: Timestamp;
 }
 
-/**
- * Comment interface
- */
-export interface Comment {
-  id: string;
-  text: string;
-  userId: string;
-  username: string;
-  userPhotoURL?: string;
-  createdAt: Timestamp;
-}
+// -----------------------------
+// CHAT RELATED TYPES
+// -----------------------------
 
 /**
- * Chat message interface
+ * Chat message
  */
 export interface ChatMessage {
   id: string;
@@ -102,7 +261,7 @@ export interface ChatMessage {
 }
 
 /**
- * Chat room interface
+ * Chat room
  */
 export interface ChatRoom {
   id: string;
@@ -113,8 +272,12 @@ export interface ChatRoom {
   lastActivityAt: Timestamp;
 }
 
+// -----------------------------
+// FEED RELATED TYPES
+// -----------------------------
+
 /**
- * User feed item interface (denormalized for O(1) feed queries)
+ * User feed item (denormalized for efficient queries)
  */
 export interface UserFeedItem {
   pairingId: string;
@@ -133,41 +296,42 @@ export interface UserFeedItem {
 }
 
 /**
- * User stats interface
+ * Comment
  */
-export interface UserStats {
-  totalPairings: number;
-  completedPairings: number;
-  completionRate: number;
-  uniqueConnectionsMade: number;
-  avgResponseTime?: number;
+export interface Comment {
+  id: string;
+  text: string;
+  userId: string;
+  username: string;
+  userPhotoURL?: string;
+  createdAt: Timestamp;
 }
 
-// Notification type definitions
-export type NotificationType = 'pairing' | 'reminder' | 'completion' | 'like' | 'comment';
+// -----------------------------
+// NAVIGATION TYPES
+// -----------------------------
 
-export interface NotificationData {
-  type: NotificationType;
-  pairingId?: string;
-  senderId?: string;
-  title: string;
-  body: string;
-  data?: any;
-}
-
-// Navigation param lists
+/**
+ * Root stack navigation params
+ */
 export type RootStackParamList = {
   Auth: undefined;
   Onboarding: undefined;
   Main: undefined;
 };
 
+/**
+ * Auth stack navigation params
+ */
 export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
 };
 
+/**
+ * Onboarding stack navigation params
+ */
 export type OnboardingStackParamList = {
   Welcome: undefined;
   Permissions: undefined;
@@ -176,6 +340,9 @@ export type OnboardingStackParamList = {
   Completion: undefined;
 };
 
+/**
+ * Main stack navigation params
+ */
 export type MainStackParamList = {
   TabNavigator: undefined;
   Camera: undefined;
@@ -185,19 +352,13 @@ export type MainStackParamList = {
   Waiting: { pairingId: string };
 };
 
+/**
+ * Tab navigation params
+ */
 export type TabParamList = {
   Feed: undefined;
   Profile: { userId?: string };
 };
 
-// export * from './auth'; // Will be uncommented when auth.ts is defined/updated
-export * from './user';
-export * from './pairing';
-export * from './notification';
-export * from './navigation';
-export * from './chat';
-export * from './comment';
-export * from './feed';
-
-// Note: Timestamp should be imported directly from 'firebase/firestore' in files that need it.
-// We are not re-exporting Timestamp here to avoid potential issues and stick to direct imports.
+// Export auth types
+export * from './auth';

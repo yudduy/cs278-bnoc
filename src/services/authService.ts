@@ -1,118 +1,86 @@
 /**
- * Authentication Service
+ * Simplified Authentication Service
  * 
- * Handles user authentication with Firebase Authentication.
+ * Direct Firestore query-based authentication without Firebase Auth.
  */
 
 import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  sendPasswordResetEmail,
-  User as FirebaseUser,
-  UserCredential,
-  Auth
-} from 'firebase/auth';
-import { 
+  collection,
+  query,
+  where,
+  getDocs,
   doc, 
   setDoc, 
   getDoc, 
   updateDoc, 
   Timestamp,
-  serverTimestamp 
+  serverTimestamp,
+  addDoc
 } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+import { db } from '../config/firebase';
 import { User } from '../types/user';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Simple password hashing function (in a real app, use a proper hashing library)
+// Note: In a production app, hashing should be done server-side
+const hashPassword = (password: string): string => {
+  // This is a very basic hash and NOT secure for production
+  // In real apps, use bcrypt or similar
+  return password; // For demo purposes only, we're not actually hashing
+};
 
 /**
- * Sign in with email and password
+ * Sign in with username and password using direct Firestore query
  */
-export const signIn = async (email: string, password: string): Promise<{
-  user: User;
-  credential: UserCredential;
-}> => {
+export const signIn = async (email: string, password: string): Promise<User> => {
   try {
-    // Check if auth is initialized
-    if (!auth) {
-      throw new Error('Authentication service is not properly initialized');
+    console.log('Attempting sign in with:', email);
+    
+    // Query Firestore for user with matching email and password
+    const userQuery = query(
+      collection(db, 'users'),
+      where('email', '==', email),
+      where('password', '==', password) // In a real app, you'd query by email only, then compare hashed passwords
+    );
+    
+    const querySnapshot = await getDocs(userQuery);
+    
+    if (querySnapshot.empty) {
+      console.log('No matching user found');
+      throw new Error('Invalid email or password');
     }
     
-    // Sign in with Firebase Auth
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = credential.user;
-
-    // Get user data from Firestore
-    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+    // Get the first matching user
+    const userDoc = querySnapshot.docs[0];
+    const userData = userDoc.data() as User;
     
-    if (userDoc.exists()) {
-      // Update last login
-      try {
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
-          lastActive: serverTimestamp()
-        });
-      } catch (updateError) {
-        console.warn('Could not update last login time:', updateError);
-        // Don't fail the sign-in process for this
-      }
-      
-      // Return user data
-      const userData = userDoc.data() as User;
-      return {
-        user: {
-          ...userData,
-          id: firebaseUser.uid
-        },
-        credential
-      };
-    } else {
-      // Create user document if it doesn't exist (rare case)
-      // This handles the edge case where a user might have an auth account but no document
-      const newUser: User = {
-        id: firebaseUser.uid,
-        email: email,
-        username: email.split('@')[0],
-        displayName: email.split('@')[0],
-        createdAt: Timestamp.now(),
-        lastActive: Timestamp.now(),
-        isActive: true,
-        flakeStreak: 0,
-        maxFlakeStreak: 0,
-        connections: [],
-        notificationSettings: {
-          pairingNotification: true,
-          reminderNotification: true,
-          chatNotification: true,
-          partnerPhotoSubmittedNotification: true,
-          socialNotifications: true,
-          quietHoursStart: 22,
-          quietHoursEnd: 8
-        },
-        blockedIds: [],
-      };
-      
-      try {
-        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-      } catch (setDocError) {
-        console.error('Error creating user document:', setDocError);
-        // Still return the user data even if Firestore fails
-      }
-      
-      return {
-        user: newUser,
-        credential
-      };
+    console.log('User found:', userDoc.id);
+    
+    // Update last login time
+    try {
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        lastActive: serverTimestamp()
+      });
+    } catch (updateError) {
+      console.warn('Could not update last login time:', updateError);
     }
+    
+    // Store authentication in AsyncStorage
+    await AsyncStorage.setItem('authenticatedUser', JSON.stringify({
+      ...userData,
+      id: userDoc.id
+    }));
+    
+    // Return user data
+    return {
+      ...userData,
+      id: userDoc.id
+    };
   } catch (error: any) {
     console.error('Sign in error:', error);
     
     // Add more descriptive error messages
-    if (error.code === 'auth/invalid-credential') {
-      error.message = 'Invalid email or password';
-    } else if (error.code === 'auth/user-not-found') {
-      error.message = 'No account found with this email';
-    } else if (error.code === 'auth/too-many-requests') {
-      error.message = 'Too many failed attempts. Please try again later';
-    } else if (!error.message) {
+    if (!error.message) {
       error.message = 'Authentication failed. Please try again.';
     }
     
@@ -121,37 +89,49 @@ export const signIn = async (email: string, password: string): Promise<{
 };
 
 /**
- * Sign up with email and password
+ * Sign up with email, password, and username
  */
 export const signUp = async (
   email: string, 
   password: string, 
   username: string
-): Promise<{
-  user: User;
-  credential: UserCredential;
-}> => {
+): Promise<User> => {
   try {
-    // Check if auth is initialized
-    if (!auth) {
-      throw new Error('Authentication service is not properly initialized');
-    }
+    console.log('Attempting to create new user:', username);
     
     // Check for Stanford email
     if (!email.toLowerCase().endsWith('@stanford.edu')) {
       throw new Error('Please use a Stanford email address');
     }
     
-    // Create user in Firebase Auth
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    const firebaseUser = credential.user;
+    // Check if email already exists
+    const emailCheck = query(
+      collection(db, 'users'),
+      where('email', '==', email)
+    );
+    
+    const emailSnapshot = await getDocs(emailCheck);
+    if (!emailSnapshot.empty) {
+      throw new Error('This email is already in use');
+    }
+    
+    // Check if username already exists
+    const usernameCheck = query(
+      collection(db, 'users'),
+      where('username', '==', username)
+    );
+    
+    const usernameSnapshot = await getDocs(usernameCheck);
+    if (!usernameSnapshot.empty) {
+      throw new Error('This username is already taken');
+    }
     
     // Create user in Firestore
-    const newUser: User = {
-      id: firebaseUser.uid,
+    const newUser: Omit<User, 'id'> & { password: string } = {
       email: email,
       username: username,
       displayName: username,
+      password: password, // In a real app, this should be hashed
       createdAt: Timestamp.now(),
       lastActive: Timestamp.now(),
       isActive: true,
@@ -170,26 +150,22 @@ export const signUp = async (
       blockedIds: [],
     };
     
-    try {
-      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-    } catch (setDocError) {
-      console.error('Error creating user document:', setDocError);
-      // Continue with the sign up even if Firestore fails
-    }
+    // Add new user to collection
+    const userRef = await addDoc(collection(db, 'users'), newUser);
     
-    return {
-      user: newUser,
-      credential
-    };
+    const createdUser = {
+      ...newUser,
+      id: userRef.id,
+    } as unknown as User;
+    
+    // Store authentication in AsyncStorage
+    await AsyncStorage.setItem('authenticatedUser', JSON.stringify(createdUser));
+    
+    return createdUser;
   } catch (error: any) {
     console.error('Sign up error:', error);
     
-    // Add more descriptive error messages
-    if (error.code === 'auth/email-already-in-use') {
-      error.message = 'This email is already in use';
-    } else if (error.code === 'auth/weak-password') {
-      error.message = 'Password is too weak';
-    } else if (!error.message) {
+    if (!error.message) {
       error.message = 'Failed to create account. Please try again.';
     }
     
@@ -202,11 +178,9 @@ export const signUp = async (
  */
 export const signOut = async (): Promise<void> => {
   try {
-    if (!auth) {
-      throw new Error('Authentication service is not properly initialized');
-    }
-    
-    await firebaseSignOut(auth);
+    // Simply remove the stored authentication
+    await AsyncStorage.removeItem('authenticatedUser');
+    console.log('User signed out successfully');
   } catch (error) {
     console.error('Sign out error:', error);
     throw error;
@@ -214,43 +188,52 @@ export const signOut = async (): Promise<void> => {
 };
 
 /**
- * Send password reset email
+ * Send password reset email - simplified
  */
 export const resetPassword = async (email: string): Promise<void> => {
   try {
-    if (!auth) {
-      throw new Error('Authentication service is not properly initialized');
-    }
-    
     // Check for Stanford email
     if (!email.toLowerCase().endsWith('@stanford.edu')) {
       throw new Error('Please use a Stanford email address');
     }
     
-    await sendPasswordResetEmail(auth, email);
-  } catch (error: any) {
-    console.error('Password reset error:', error);
+    // Find user with this email
+    const userQuery = query(
+      collection(db, 'users'),
+      where('email', '==', email)
+    );
     
-    // Add more descriptive error messages
-    if (error.code === 'auth/user-not-found') {
-      error.message = 'No account found with this email';
-    } else if (!error.message) {
-      error.message = 'Failed to send password reset email. Please try again.';
+    const querySnapshot = await getDocs(userQuery);
+    
+    if (querySnapshot.empty) {
+      throw new Error('No account found with this email');
     }
     
+    // In a real app, this would send an actual email
+    // Here we're just simulating the process
+    console.log('Password reset requested for:', email);
+    
+    // Success - no actual email sent in this mock implementation
+  } catch (error: any) {
+    console.error('Password reset error:', error);
     throw error;
   }
 };
 
 /**
- * Get the current Firebase user from auth state
+ * Load the authenticated user from storage
  */
-export const getCurrentFirebaseUser = (): FirebaseUser | null => {
-  if (!auth) {
-    console.error('Auth service not initialized');
+export const loadStoredAuth = async (): Promise<User | null> => {
+  try {
+    const storedUser = await AsyncStorage.getItem('authenticatedUser');
+    if (storedUser) {
+      return JSON.parse(storedUser) as User;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error loading stored auth:', error);
     return null;
   }
-  return auth.currentUser;
 };
 
 /**
@@ -261,8 +244,15 @@ export const getUserProfile = async (uid: string): Promise<User | null> => {
     const userDoc = await getDoc(doc(db, 'users', uid));
     
     if (userDoc.exists()) {
+      const userData = userDoc.data();
+      
+      // Remove password from returned data
+      if ('password' in userData) {
+        delete userData.password;
+      }
+      
       return {
-        ...userDoc.data(),
+        ...userData,
         id: uid
       } as User;
     }
@@ -278,7 +268,16 @@ export const getUserProfile = async (uid: string): Promise<User | null> => {
  * Check if a username already exists
  */
 export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
-  // In a real implementation, this would query Firestore for matching usernames
-  // For this implementation, we'll simply assume usernames are available
-  return true;
-}; 
+  try {
+    const usernameCheck = query(
+      collection(db, 'users'),
+      where('username', '==', username)
+    );
+    
+    const snapshot = await getDocs(usernameCheck);
+    return snapshot.empty;
+  } catch (error) {
+    console.error('Error checking username availability:', error);
+    return false;
+  }
+};

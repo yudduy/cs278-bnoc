@@ -1,6 +1,6 @@
 // src/services/userService.ts
 
-import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion, arrayRemove, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion, arrayRemove, Timestamp, writeBatch } from 'firebase/firestore';
 import { User, NotificationSettings } from '../types';
 import { db } from '../config/firebase';
 
@@ -16,7 +16,8 @@ export const createUserDocument = async (uid: string, email: string, username: s
     partnerPhotoSubmittedNotification: true,
     reminderNotification: true,
     socialNotifications: true,
-    // quietHoursStart and quietHoursEnd are optional and can be undefined initially
+    quietHoursStart: 22, // Default: 10 PM
+    quietHoursEnd: 8     // Default: 8 AM
   };
 
   const userData: User = {
@@ -78,19 +79,40 @@ export const getCurrentUser = async (userId: string): Promise<User | null> => {
 
 /**
  * Add/remove user from connections list
+ * Makes the connection mutual - adds each user to the other's connections
  */
 export const updateConnection = async (currentUserId: string, targetUserId: string, action: 'add' | 'remove'): Promise<void> => {
+  // Get a reference to both users
   const currentUserRef = doc(db, 'users', currentUserId);
-
+  const targetUserRef = doc(db, 'users', targetUserId);
+  
+  // Create a batch operation to ensure both updates happen together
+  const batch = writeBatch(db);
+  
   if (action === 'add') {
-    await updateDoc(currentUserRef, {
+    // Add targetUser to currentUser's connections
+    batch.update(currentUserRef, {
       connections: arrayUnion(targetUserId)
     });
+    
+    // Add currentUser to targetUser's connections (mutual connection)
+    batch.update(targetUserRef, {
+      connections: arrayUnion(currentUserId)
+    });
   } else if (action === 'remove') {
-    await updateDoc(currentUserRef, {
+    // Remove targetUser from currentUser's connections
+    batch.update(currentUserRef, {
       connections: arrayRemove(targetUserId)
     });
+    
+    // Remove currentUser from targetUser's connections (mutual removal)
+    batch.update(targetUserRef, {
+      connections: arrayRemove(currentUserId)
+    });
   }
+  
+  // Commit the batch
+  await batch.commit();
 };
 
 /**

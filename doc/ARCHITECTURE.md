@@ -126,6 +126,44 @@ UI is built using composable components that follow the single responsibility pr
 4. User interactions update the Firestore documents
 5. Real-time updates are reflected in the UI
 
+### 3. Friend Connection Flow
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│FindFriends  │     │ userService │     │  Firebase   │
+│   Screen    │────▶│updateConnect│────▶│ Firestore   │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │                   │
+                           ▼                   ▼
+                    ┌─────────────┐     ┌─────────────┐
+                    │ Mutual Friend│     │ connections │
+                    │  Updates    │     │   Array     │
+                    └─────────────┘     └─────────────┘
+                           │                   │
+                           ▼                   ▼
+                    ┌─────────────┐     ┌─────────────┐
+                    │ User Interface │  │Pairing Algo │
+                    │ Updates       │  │ Preferences  │
+                    └─────────────┘    └─────────────┘
+```
+
+1. User adds a friend in the FindFriendsScreen
+2. `userService.updateConnection` handles the update
+3. Mutual connection is created in Firestore for both users
+4. UI updates to show the friend as added
+5. Pairing algorithm will prioritize friend connections when creating daily pairings
+
+### 4. Empty State System
+
+The app uses a conditional rendering approach for empty states:
+
+1. **User Authentication State Check** - If user is not authenticated, show authentication screens
+2. **Friend Count Check** - If user has fewer than 5 friends, show "Add Friends" empty state
+3. **Current Pairing Check** - If user has no current pairing, show "No Match Today" empty state
+4. **Pairing Completion Check** - If user has no completed pairings, show "No Selfies Yet" empty state
+
+This progressive validation ensures users receive appropriate guidance based on their current state in the app flow.
+
 ## Key Design Decisions
 
 ### 1. Single Camera System
@@ -157,6 +195,16 @@ Complex business logic is implemented in Cloud Functions:
 - Feed updates
 
 This approach keeps the client lighter and ensures consistent business rule application.
+
+### 5. Friend Connections Model
+
+The app uses a bidirectional friend connection model:
+
+- Connections are stored as arrays of user IDs in each user document
+- Adding a friend creates a mutual connection (both users appear in each other's connections array)
+- Firestore batch operations ensure atomic updates to maintain consistency
+- The pairing algorithm prioritizes matching users with their friends when possible
+- Users need at least 5 friends to be eligible for daily pairing
 
 ## State Management
 

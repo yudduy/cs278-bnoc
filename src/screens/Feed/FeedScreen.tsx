@@ -25,6 +25,7 @@ import { COLORS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { Pairing, User } from '../../types';
 import PostCard from '../../components/feed/PostCard';
+import EmptyFeed from '../../components/feed/EmptyFeed';
 import { useAuth } from '../../context/AuthContext';
 import { usePairing } from '../../context/PairingContext';
 import firebaseService from '../../services/firebase';
@@ -330,46 +331,17 @@ const FeedScreen: React.FC = () => {
   const renderEmptyComponent = () => {
     if (loading) return null;
     
-    // Check for friend count - for demo purposes, use 0 to show the add friends view
-    const friendCount = 0; // In a real app, get this from the user's connections array
+    // Check for friend count
+    const friendCount = user?.connections?.length || 0;
     const minFriendsRequired = 5;
     
-    if (friendCount < minFriendsRequired) {
-      // Not enough friends yet, show the add friends prompt
-      return (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="people-outline" size={64} color={COLORS.textSecondary} />
-          <Text style={styles.emptyTitle}>Add at least 5 friends to get started!</Text>
-          <Text style={styles.emptyText}>
-            Connect with your Stanford friends to start getting daily meetup suggestions.
-          </Text>
-          <TouchableOpacity 
-            style={styles.addFriendsButton}
-            onPress={navigateToFriendsList}
-          >
-            <Ionicons name="person-add" size={20} color="#FFFFFF" />
-            <Text style={styles.addFriendsButtonText}>Add friends</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    
-    // Has enough friends but no pairings yet
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="camera-outline" size={64} color={COLORS.textSecondary} />
-        <Text style={styles.emptyTitle}>No Selfies Yet</Text>
-        <Text style={styles.emptyText}>
-          Completed pairings will appear here. Take a selfie with your daily partner to see it in the feed!
-        </Text>
-        <TouchableOpacity 
-          style={styles.emptyCameraButton}
-          onPress={navigateToCamera}
-        >
-          <Ionicons name="camera" size={20} color="#FFFFFF" />
-          <Text style={styles.emptyCameraButtonText}>Take Today's Selfie</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyFeed
+        friendCount={friendCount}
+        minFriendsRequired={minFriendsRequired}
+        onAddFriends={navigateToFriendsList}
+        onTakePhoto={navigateToCamera}
+      />
     );
   };
   
@@ -419,6 +391,11 @@ const FeedScreen: React.FC = () => {
     outputRange: [0.5, 1]
   });
   
+  // Determine if we should show the camera FAB
+  const friendCount = user?.connections?.length || 0;
+  const minFriendsRequired = 5;
+  const shouldShowFab = friendCount >= minFriendsRequired && currentPairing != null;
+  
   return (
     <SafeAreaView style={globalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
@@ -466,29 +443,31 @@ const FeedScreen: React.FC = () => {
           </View>
         ) : null}
         
-        {/* Camera FAB */}
-        <Animated.View style={[
-          styles.fabContainer,
-          { 
-            transform: [{ scale: fabScale }],
-            opacity: fabAnim
-          }
-        ]}>
-          <TouchableOpacity 
-            style={styles.cameraFab}
-            onPress={navigateToCamera}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="camera" size={24} color="#000000" />
-          </TouchableOpacity>
-          
-          {/* Current pairing indicator */}
-          {currentPairing && (
-            <View style={styles.currentPairingIndicator}>
-              <Text style={styles.currentPairingText}>Txt_ovrflw</Text>
-            </View>
-          )}
-        </Animated.View>
+        {/* Camera FAB - only show if user has enough friends and has a current pairing */}
+        {shouldShowFab && (
+          <Animated.View style={[
+            styles.fabContainer,
+            { 
+              transform: [{ scale: fabScale }],
+              opacity: fabAnim
+            }
+          ]}>
+            <TouchableOpacity 
+              style={styles.cameraFab}
+              onPress={navigateToCamera}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="camera" size={24} color="#000000" />
+            </TouchableOpacity>
+            
+            {/* Current pairing indicator */}
+            {currentPairing && (
+              <View style={styles.currentPairingIndicator}>
+                <Text style={styles.currentPairingText}>Txt_ovrflw</Text>
+              </View>
+            )}
+          </Animated.View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -542,58 +521,6 @@ const styles = StyleSheet.create({
   feedContent: {
     padding: 12,
     paddingTop: 12,
-  },
-  emptyContainer: {
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 48,
-  },
-  emptyTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 20,
-    color: COLORS.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  emptyCameraButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  emptyCameraButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: '#FFFFFF',
-    marginLeft: 8,
-  },
-  addFriendsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  addFriendsButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: '#FFFFFF',
-    marginLeft: 8,
   },
   footerLoader: {
     paddingVertical: 16,
