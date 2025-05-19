@@ -315,11 +315,14 @@ const firebaseService = {
     photoUri: string,
     isPrivate: boolean = false
   ): Promise<void> => {
-    // Step 1: Upload the image to Firebase Storage
+    // Step 1: Upload the image to Firebase Storagem
+    console.log('Uploading image to Firebase Storage');
     const imageRef = ref(storage, `pairings/${pairingId}/${userId}_photo.jpg`);
     const imageBlob = await (await fetch(photoUri)).blob();
     await uploadBytes(imageRef, imageBlob);
+    console.log('Image uploaded successfully');
     const photoUrl = await getDownloadURL(imageRef);
+    console.log('Image URL:', photoUrl);
     
     // Step 2: Update the pairing with the photo URL
     return PairingService.updatePairingWithPhoto(pairingId, userId, photoUrl, isPrivate);

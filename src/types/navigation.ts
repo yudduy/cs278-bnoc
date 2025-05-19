@@ -4,9 +4,16 @@
  * Type definitions for navigation-related data.
  */
 
+import { NavigatorScreenParams } from '@react-navigation/native'; // Import NavigatorScreenParams
+
 export type MainStackParamList = {
-  TabNavigator: undefined;
-  Camera: undefined;
+  // MODIFIED: Define params for TabNavigator to accept screen and params for MainTabParamList
+  TabNavigator: NavigatorScreenParams<MainTabParamList>; 
+  Camera: { 
+    pairingId?: string; 
+    userId?: string; 
+    submissionType?: 'pairing' | 'profile' | 'other'; // Added submissionType
+  };
   PhotoPreview: {
     frontImage: string;
     backImage: string;
@@ -22,8 +29,13 @@ export type MainStackParamList = {
 
 export type RootStackParamList = {
   Auth: undefined;
-  Main: undefined;
+  Main: undefined; // This likely navigates to MainStackParamList or MainTabParamList
   Onboarding: undefined;
+  Camera: { 
+    pairingId?: string; 
+    userId?: string; 
+    submissionType?: 'pairing' | 'profile' | 'other';
+  };
 };
 
 export type AuthStackParamList = {
@@ -36,9 +48,12 @@ export type AuthStackParamList = {
 export type MainTabParamList = {
   Feed: {
     scrollToPairingId?: string;
+    refresh?: boolean; // Added refresh param
   };
   Camera: { 
     pairingId?: string;
+    userId?: string; 
+    submissionType?: 'pairing' | 'profile' | 'other'; // Added submissionType
   };
   Profile: { 
     userId?: string;

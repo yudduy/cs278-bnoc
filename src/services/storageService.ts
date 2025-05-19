@@ -20,14 +20,18 @@ export const uploadImage = async (
     throw new Error('User ID is required to upload an image.');
   }
 
+  console.log('imageUri:', imageUri);
   const response = await fetch(imageUri);
   const blob = await response.blob();
+  console.log('blob:', blob);
+  console.log('blob size:', blob.size);
+  console.log('blob type:', blob.type);
 
   const fileExtension = imageUri.split('.').pop() || 'jpg';
   const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExtension}`;
   const storagePath = `photos/${userId}/${fileName}`;
   const imageRef = ref(storage, storagePath);
-
+  console.log('imageRef:', imageRef);
   return new Promise((resolve, reject) => {
     const uploadTask = uploadBytesResumable(imageRef, blob);
 
@@ -40,6 +44,10 @@ export const uploadImage = async (
         }
       },
       (error) => {
+        console.error('Upload failed. Full error object:', JSON.stringify(error, null, 2)); // Log the whole error object
+        if (error.serverResponse) {
+          console.error('Detailed server response:', error.serverResponse);
+        }
         console.error('Upload failed:', error);
         reject(error);
       },

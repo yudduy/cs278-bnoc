@@ -57,6 +57,7 @@ export const DARK_COLORS = {
 
 export const FONTS = {
   regular: 'ChivoRegular',
+  medium: 'ChivoMedium', // Added medium font
   bold: 'ChivoBold',
   light: 'ChivoLight',
   italic: 'ChivoItalic',

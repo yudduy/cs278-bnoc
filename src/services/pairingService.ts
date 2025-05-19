@@ -1,10 +1,11 @@
 // src/services/pairingService.ts
 
-import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, arrayUnion, Timestamp, DocumentSnapshot, increment } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, arrayUnion, Timestamp, DocumentSnapshot, increment, startAfter, QueryConstraint } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
-import { Pairing, Comment } from '../types';
+import { Pairing, Comment, PairingFeedItem, User } from '../types';
 import { db, storage } from '../config/firebase';
+import { getUserById } from './userService';
 
 /**
  * Get current pairing for a user
@@ -78,6 +79,126 @@ export const getUserPairingHistory = async (userId: string, limitNum: number = 1
     return [];
   }
 };
+
+/**
+ * Get the most recent pairings for a feed, optionally for a specific user or their connections.
+ *
+ * @param count - Number of pairings to retrieve.
+ * @param forUserId - (Optional) If provided, fetches recent pairings involving this user.
+ * @param afterDoc - (Optional) DocumentSnapshot to start after for pagination.
+ * @returns A promise that resolves to an array of PairingFeedItem objects.
+ */
+export const getRecentPairingsFeed = async (
+  count: number = 10,
+  forUserId?: string,
+  afterDoc?: DocumentSnapshot 
+): Promise<PairingFeedItem[]> => {
+  try {
+    const pairingsCollectionRef = collection(db, 'pairings');
+    
+    const queryConstraints: QueryConstraint[] = [
+      where('status', '==', 'completed'),
+      orderBy('completedAt', 'desc'),
+      limit(count)
+    ];
+
+    if (forUserId) {
+      queryConstraints.unshift(where('users', 'array-contains', forUserId));
+    } else {
+      // If not for a specific user, only show public pairings by default
+      queryConstraints.unshift(where('isPrivate', '==', false));
+    }
+
+    if (afterDoc) {
+      queryConstraints.push(startAfter(afterDoc));
+    }
+
+    const q = query(pairingsCollectionRef, ...queryConstraints);
+
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return [];
+
+    const feedItemsPromises = snapshot.docs.map(async (docData): Promise<PairingFeedItem | null> => {
+      const pairingData = docData.data();
+      
+      // Validate users field
+      const usersArray = pairingData.users;
+      if (!Array.isArray(usersArray) || usersArray.length !== 2 || !usersArray.every(u => typeof u === 'string')) {
+        console.warn(`Pairing ${docData.id} has malformed 'users' field:`, usersArray);
+        return null; // Skip this pairing
+      }
+      const validUsersTuple = usersArray as [string, string];
+
+      // Validate required string fields, providing defaults or logging issues
+      const user1_id = pairingData.user1_id as string;
+      const user2_id = pairingData.user2_id as string;
+      const chatId = pairingData.chatId as string;
+      if (!user1_id || !user2_id) {
+        console.warn(`Pairing ${docData.id} is missing user1_id or user2_id.`);
+        return null;
+      }
+
+      const basePairing: Pairing = {
+        id: docData.id,
+        date: pairingData.date as Timestamp, // Assuming it's always a Timestamp
+        expiresAt: pairingData.expiresAt as Timestamp, // Assuming it's always a Timestamp
+        users: validUsersTuple,
+        status: pairingData.status as Pairing['status'], // Type assertion for known set of statuses
+        user1_id: user1_id,
+        // Correctly handle fields that can be string | undefined or Timestamp | undefined in Firestore data
+        // and align with Pairing type which uses optional (e.g. user1_photoURL?: string)
+        user1_photoURL: pairingData.user1_photoURL ?? undefined, 
+        user1_submittedAt: pairingData.user1_submittedAt ?? undefined,
+        user2_id: user2_id,
+        user2_photoURL: pairingData.user2_photoURL ?? undefined,
+        user2_submittedAt: pairingData.user2_submittedAt ?? undefined,
+        chatId: chatId || '',
+        likesCount: (pairingData.likesCount || 0) as number,
+        likedBy: (pairingData.likedBy || []) as string[],
+        commentsCount: (pairingData.commentsCount || 0) as number,
+        completedAt: pairingData.completedAt ?? undefined,
+        isPrivate: pairingData.isPrivate as boolean, // Assuming it's always a boolean
+        virtualMeetingLink: (pairingData.virtualMeetingLink || '') as string, // Provide default if can be missing
+      };
+      
+      let user1Profile: User | null = null;
+      let user2Profile: User | null = null;
+
+      // user1_id and user2_id are validated above to be strings
+      user1Profile = await getUserById(basePairing.user1_id);
+      user2Profile = await getUserById(basePairing.user2_id);
+
+      // If user profiles are essential and not found, you might choose to return null
+      // For now, we allow them to be undefined in PairingFeedItem
+
+      const feedItem: PairingFeedItem = {
+        ...basePairing,
+        user1: user1Profile ? {
+          id: user1Profile.id,
+          username: user1Profile.username,
+          displayName: user1Profile.displayName,
+          photoURL: user1Profile.photoURL,
+        } : undefined,
+        user2: user2Profile ? {
+          id: user2Profile.id,
+          username: user2Profile.username,
+          displayName: user2Profile.displayName,
+          photoURL: user2Profile.photoURL,
+        } : undefined,
+      };
+      return feedItem;
+    });
+
+    const resolvedItems = await Promise.all(feedItemsPromises);
+    // Explicitly type `item` in the filter function
+    const feedItems = resolvedItems.filter((item: PairingFeedItem | null): item is PairingFeedItem => item !== null);
+    return feedItems;
+  } catch (error) {
+    console.error('Error getting recent pairings feed:', error);
+    return [];
+  }
+};
+
 
 /**
  * DEPRECATED / NEEDS REVIEW: Original completePairing for dual camera system.

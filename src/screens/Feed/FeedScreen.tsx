@@ -17,11 +17,12 @@ import {
   Image,
   Share,
   Animated,
-  StatusBar
+  StatusBar,
+  Alert // Added Alert
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../config/theme';
+import { COLORS, SHADOWS, BORDER_RADIUS, FONTS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { Pairing, User } from '../../types';
 import PostCard from '../../components/feed/PostCard';
@@ -47,66 +48,36 @@ const FeedScreen: React.FC = () => {
   
   // Animation for feed appearance
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const fabAnim = useRef(new Animated.Value(0)).current;
-  
-  // Pagination state
   const lastVisible = useRef<any>(null);
+  const flatListRef = useRef<FlatList>(null);
   
   // Get auth context
   const { user } = useAuth();
-  const { currentPairing } = usePairing();
-  
-  // Navigation
+  const { currentPairing, loadCurrentPairing } = usePairing();
   const navigation = useNavigation();
-  
-  // Get route params (for scrolling to a specific pairing)
   const route = useRoute<RouteProp<MainTabParamList, 'Feed'>>();
   const scrollToPairingId = route.params?.scrollToPairingId;
-  
-  // Ref for FlatList
-  const flatListRef = useRef<FlatList>(null);
-  
-  // Load initial feed data
-  useEffect(() => {
-    loadFeed(true);
-    
-    // Fade in animation
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-    
-    // FAB animation
-    Animated.spring(fabAnim, {
-      toValue: 1,
-      friction: 6,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-  
-  // Scroll to specific pairing if requested
-  useEffect(() => {
-    if (scrollToPairingId && pairings.length > 0) {
-      const index = pairings.findIndex(p => p.id === scrollToPairingId);
-      if (index !== -1 && flatListRef.current) {
-        flatListRef.current.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.5
-        });
-      }
+
+  // ADDED: Check if the user has already submitted a photo for the current pairing
+  const hasUserSubmittedPhoto = React.useMemo(() => {
+    if (!currentPairing || !user) return false;
+
+    if (user.id === currentPairing.user1_id && currentPairing.user1_photoURL) {
+      return true;
     }
-  }, [scrollToPairingId, pairings]);
-  
+    if (user.id === currentPairing.user2_id && currentPairing.user2_photoURL) {
+      return true;
+    }
+    return false;
+  }, [currentPairing, user]);
+
   /**
    * Load feed data from Firebase
    * @param refresh Whether to refresh from the beginning
    */
   const loadFeed = useCallback(async (refresh = false) => {
     if (!user?.id) {
-      console.log('Cannot load feed: No authenticated user');
+      // console.log('Cannot load feed: No authenticated user');
       return;
     }
     
@@ -121,7 +92,7 @@ const FeedScreen: React.FC = () => {
     setError(null);
     
     try {
-      console.log('Loading feed data from Firebase...');
+      // console.log('Loading feed data from Firebase...');
       
       // Get feed from Firebase with pagination
       const result = await firebaseService.getFeed(
@@ -132,7 +103,7 @@ const FeedScreen: React.FC = () => {
       
       const { pairings: newPairings, lastVisible: newLastVisible, hasMore: newHasMore } = result;
       
-      console.log(`Loaded ${newPairings.length} pairings from Firebase`);
+      // console.log(`Loaded ${newPairings.length} pairings from Firebase`);
       
       // Update state with actual data
       if (refresh) {
@@ -170,17 +141,48 @@ const FeedScreen: React.FC = () => {
       
       // Update users state
       setUsers(prev => refresh ? newUsers : { ...prev, ...newUsers });
-    } catch (error) {
-      console.error('Error loading feed:', error);
+    } catch (e) {
+      console.error('Error loading feed:', e);
       setError('Failed to load feed. Pull down to try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [user?.id]);
+  }, [user?.id]); // Dependency on user.id
+
+  // Load initial feed data
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+  }, [fadeAnim]);
   
-  // No longer using mock data generation
+  // Data loading and user authentication effect
+  useEffect(() => {
+    if (user?.id) {
+      loadFeed(true);
+      if (!currentPairing) {
+        loadCurrentPairing();
+      }
+    } 
+  }, [user, loadFeed, currentPairing, loadCurrentPairing]);
+  
+  // Scroll to specific pairing if requested
+  useEffect(() => {
+    if (scrollToPairingId && pairings.length > 0) {
+      const index = pairings.findIndex(p => p.id === scrollToPairingId);
+      if (index !== -1 && flatListRef.current) {
+        flatListRef.current.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0.5
+        });
+      }
+    }
+  }, [scrollToPairingId, pairings]);
   
   /**
    * Handle sharing a pairing
@@ -225,6 +227,33 @@ const FeedScreen: React.FC = () => {
    */
   const navigateToCamera = () => {
     navigation.navigate('Camera' as never);
+  };
+
+  const navigateToCameraForPairing = () => {
+    if (currentPairing && user) {
+      const navigateAction = () => {
+        navigation.navigate('Camera', { 
+          pairingId: currentPairing.id,
+          userId: user.id,
+          submissionType: 'pairing', 
+        } as never);
+      };
+
+      if (hasUserSubmittedPhoto) {
+        Alert.alert(
+          "Retake Photo?",
+          "You've already submitted a photo for today's pairing. Taking another will replace the existing one.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Retake", onPress: navigateAction }
+          ]
+        );
+      } else {
+        navigateAction();
+      }
+    } else {
+      console.warn("Attempted to navigate to camera for pairing without a current pairing or user.");
+    }
   };
   
   /**
@@ -385,91 +414,105 @@ const FeedScreen: React.FC = () => {
     );
   };
   
-  // FAB animation
-  const fabScale = fabAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.5, 1]
-  });
-  
   // Determine if we should show the camera FAB
   const friendCount = user?.connections?.length || 0;
   const minFriendsRequired = 5;
   const shouldShowFab = friendCount >= minFriendsRequired && currentPairing != null;
   
-  return (
-    <SafeAreaView style={globalStyles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-      <View style={styles.container}>
-        {/* Custom Header */}
-        {renderHeader()}
+  // ADDED: Logic for showing the pairing camera button
+  const shouldShowPairingCameraButton = React.useMemo(() => {
+    if (!currentPairing || !user) {
+      // console.log("Debug FeedScreen: No currentPairing or user for pairing camera button");
+      return false;
+    }
+
+    // user1_id and user2_id from the pairing document define who is in which "slot".
+    // A valid currentPairing for photo submission must have these fields.
+    if (!currentPairing.user1_id || !currentPairing.user2_id) {
+      console.warn("Debug FeedScreen: Current pairing is missing user1_id or user2_id", currentPairing);
+      return false;
+    }
+
+    if (user.id === currentPairing.user1_id || user.id === currentPairing.user2_id) {
+      return true;
+    }
+    
+    return false;
+  }, [currentPairing, user]);
+  
+  /**
+   * Placeholder for rendering the "Today's Pairing" section
+   * You'll need to integrate the button into your actual component/JSX for this section
+   */
+  const renderCurrentPairingSection = () => {
+    if (!currentPairing || !user) return null;
+
+    return (
+      <View style={styles.currentPairingContainer}>
+        <Text style={styles.currentPairingTitle}>Today's Pairing</Text>
+        {/* ... Your existing content for current pairing (details, Go to Chat, Back Home) ... */}
         
-        {/* Feed */}
-        {loading && !refreshing ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading feed...</Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={pairings}
-            renderItem={renderPairingItem}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.feedContent}
-            ListEmptyComponent={renderEmptyComponent}
-            ListFooterComponent={renderFooter}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                tintColor={COLORS.primary}
-                colors={[COLORS.primary]}
-              />
-            }
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.3}
-            initialNumToRender={5}
-            maxToRenderPerBatch={10}
-            windowSize={10}
-            removeClippedSubviews={true}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-        
-        {/* Error Banner */}
-        {error ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-        
-        {/* Camera FAB - only show if user has enough friends and has a current pairing */}
-        {shouldShowFab && (
-          <Animated.View style={[
-            styles.fabContainer,
-            { 
-              transform: [{ scale: fabScale }],
-              opacity: fabAnim
-            }
-          ]}>
-            <TouchableOpacity 
-              style={styles.cameraFab}
-              onPress={navigateToCamera}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="camera" size={24} color="#000000" />
+        {shouldShowPairingCameraButton && (
+          <>
+            <TouchableOpacity onPress={navigateToCameraForPairing} style={styles.pairingPhotoButton}>
+              <Ionicons name="camera-outline" size={24} color={COLORS.background} />
+              <Text style={styles.pairingPhotoButtonText}>
+                {hasUserSubmittedPhoto ? "Retake Pairing Photo" : "Take Today's Pairing Photo"}
+              </Text>
             </TouchableOpacity>
-            
-            {/* Current pairing indicator */}
-            {currentPairing && (
-              <View style={styles.currentPairingIndicator}>
-                <Text style={styles.currentPairingText}>Txt_ovrflw</Text>
-              </View>
+            {hasUserSubmittedPhoto && (
+              <Text style={styles.retakeWarningText}>
+                You've already submitted a photo. Retaking will replace it.
+              </Text>
             )}
-          </Animated.View>
+          </>
         )}
+        {/* ... Other buttons like "Go to Chat", "Back Home" ... */}
       </View>
-    </SafeAreaView>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      {renderHeader()}
+
+      {/* Render the Today's Pairing section here if it's separate from the list */}
+      {currentPairing && renderCurrentPairingSection()} 
+      
+      {loading && pairings.length === 0 && !error ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={() => loadFeed(true)} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={pairings}
+          renderItem={renderPairingItem}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={renderEmptyComponent}
+          ListFooterComponent={renderFooter}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={COLORS.primary}
+            />
+          }
+          contentContainerStyle={pairings.length === 0 ? styles.emptyListContainer : styles.listContainer}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </View>
   );
 };
 
@@ -478,104 +521,104 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  headerContainer: {
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: COLORS.background,
-    width: '100%',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: COLORS.background,
+  },
+  errorText: {
+    color: COLORS.text,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: BORDER_RADIUS.md, // Used BORDER_RADIUS.md from theme
+  },
+  retryButtonText: {
+    color: COLORS.background, // Text on primary button should be contrasting (e.g. black)
+    fontSize: 16,
+    fontFamily: FONTS.bold, // Used FONTS.bold from theme
+  },
+  listContainer: {
+    paddingBottom: 80, // Ensure space for FAB if it's at the bottom
+  },
+  emptyListContainer: {
+    flexGrow: 1, // Ensures EmptyFeed can center itself
+  },
+  headerContainer: {
+    backgroundColor: COLORS.background, // Match screen background
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerTitle: {
-    color: COLORS.primary,
-    fontSize: 20,
-    fontFamily: 'ChivoBold',
-    letterSpacing: 1,
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10, // Adjust as needed
+    height: 60, // Example height
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 5,
+  },
+  headerTitle: {
+    fontFamily: FONTS.bold, // Used FONTS.bold from theme
+    fontSize: 24,
+    color: COLORS.primary,
   },
   headerAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  loadingText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginTop: 12,
-  },
-  feedContent: {
-    padding: 12,
-    paddingTop: 12,
-  },
   footerLoader: {
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: 'center',
   },
-  errorBanner: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: COLORS.error,
-    padding: 12,
+  currentPairingContainer: {
+    padding: 15,
+    backgroundColor: COLORS.card, // Example background
+    margin: 10,
+    borderRadius: BORDER_RADIUS.md,
+    ...SHADOWS.medium,
+  },
+  currentPairingTitle: {
+    fontSize: 18,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: 10,
+  },
+  pairingPhotoButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  errorText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: '#FFFFFF',
-  },
-  fabContainer: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    alignItems: 'center',
-  },
-  cameraFab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
     backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: BORDER_RADIUS.md,
     justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
+    marginTop: 10,
   },
-  currentPairingIndicator: {
-    backgroundColor: COLORS.backgroundLight,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    position: 'absolute',
-    top: -10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.5,
-    elevation: 2,
+  pairingPhotoButtonText: {
+    color: COLORS.background, // Changed from COLORS.white
+    fontSize: 16,
+    fontFamily: FONTS.medium,
+    marginLeft: 8,
   },
-  currentPairingText: {
-    fontFamily: 'ChivoBold',
+  retakeWarningText: { // Added style for the warning text
     fontSize: 12,
-    color: COLORS.primary,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 5,
   },
 });
 

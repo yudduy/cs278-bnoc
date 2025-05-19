@@ -1,57 +1,61 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
+
+    /* ── helpers ── */
+    function isSignedIn()         { return request.auth != null; }
+    function isOwner(uid)         { return request.auth.uid == uid; }
+
+    function getFirestoreData(p) {
+      return firestore.exists(p) ? firestore.get(p).data : null;
     }
-    
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    
+
+    // participants & visibility --------------------------------------------
     function isPairingParticipant(pairingId) {
-      let pairingData = firestore.get(/databases/(default)/documents/pairings/$(pairingId)).data;
-      return request.auth.uid in pairingData.users;
+      let d = getFirestoreData("/databases/(default)/documents/pairings/" + pairingId);
+      return d != null && d.users is list && request.auth.uid in d.users;
     }
-    
-    // Default: deny all
-    match /{allPaths=**} {
-      allow read, write: if false;
+
+    function isPairingPublic(pairingId) {
+      let d = getFirestoreData("/databases/(default)/documents/pairings/" + pairingId);
+      return d != null && d.isPrivate == false;
     }
-    
-    // User profile images
+
+    function isChatParticipant(chatId) {
+      let d = getFirestoreData("/databases/(default)/documents/chatRooms/" + chatId);
+      return d != null && d.userIds is list && request.auth.uid in d.userIds;
+    }
+
+    /* ── storage rules ── */
+
+    // user photos -----------------------------------------------------------
+    match /photos/{userId}/{fileName=**} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+
+    // profile pictures ------------------------------------------------------
     match /users/{userId}/profile.jpg {
-      // Anyone can read user profile pictures
-      allow read: if isSignedIn();
-      // Only the user can upload their own profile picture
+      allow read : if isSignedIn();
       allow write: if isOwner(userId);
     }
-    
-    // Pairing images
+
+    // pairing images --------------------------------------------------------
     match /pairings/{pairingId}/{userId}.jpg {
-      // Can read a pairing image if:
-      // 1. You're a participant, OR
-      // 2. The pairing isn't private
-      allow read: if isSignedIn() && (
-        isPairingParticipant(pairingId) || 
-        !firestore.get(/databases/(default)/documents/pairings/$(pairingId)).data.isPrivate
-      );
-      
-      // Can only upload your own image for a pairing you're part of
-      allow write: if isSignedIn() && 
-        isPairingParticipant(pairingId) && 
-        isOwner(userId);
+      allow read : if isSignedIn() &&
+                    (isPairingParticipant(pairingId) || isPairingPublic(pairingId));
+      allow write: if isSignedIn() &&
+                    isPairingParticipant(pairingId) &&
+                    isOwner(userId);
     }
-    
-    // Chat images
+
+    // chat images -----------------------------------------------------------
     match /chats/{chatId}/{messageId}.jpg {
-      // Only chat participants can read/write chat images
-      allow read: if isSignedIn() && 
-        (request.auth.uid in firestore.get(/databases/(default)/documents/chatRooms/$(chatId)).data.userIds);
-      
-      allow write: if isSignedIn() && 
-        (request.auth.uid in firestore.get(/databases/(default)/documents/chatRooms/$(chatId)).data.userIds);
+      allow read, write: if isSignedIn() && isChatParticipant(chatId);
+    }
+
+    // fallback --------------------------------------------------------------
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }
