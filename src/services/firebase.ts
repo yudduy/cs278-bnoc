@@ -1,438 +1,120 @@
+// src/services/firebase.ts
+
 /**
- * Firebase Service
+ * Helper function for Firestore operations with retry logic
+ * Helps handle WebChannelConnection RPC errors
+ */
+const executeWithRetry = async (operation: Function, maxRetries = 3): Promise<any> => {
+  let attempt = 0;
+  let lastError;
+  
+  while (attempt < maxRetries) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      attempt++;
+      
+      // Log the retry attempt
+      console.log(`Retry attempt ${attempt}/${maxRetries} for Firestore operation`);
+      
+      // Wait a bit longer between each retry
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  
+  // If we've exhausted all retries, throw the last error
+  throw lastError;
+};
+
+/**
+ * Firebase Service - Facade
  * 
- * Enhanced mock implementation of Firebase service for demonstration purposes.
- * In a real app, this would interact with actual Firebase services.
+ * This module serves as a facade for all Firebase related services.
+ * It maintains the same interface as the previous implementation for backward compatibility,
+ * while using the real Firebase implementation from specialized services.
  */
 
-import { User, Pairing, Comment, NotificationSettings, UserPrivacySettings, UserFeedItem } from '../types';
-import { v4 as uuidv4 } from 'uuid';
+// Import all specialized services
+import * as UserService from './userService';
+import * as PairingService from './pairingService';
+import * as FeedService from './feedService';
 
-// Mock data
-const mockUsers: Record<string, User> = {
-  'user1': {
-    id: 'user1',
-    email: 'justin@stanford.edu',
-    username: 'justin',
-    displayName: 'Justin',
-    createdAt: new Date() as any,
-    lastActive: new Date() as any,
-    isActive: true,
-    flakeStreak: 0,
-    maxFlakeStreak: 2,
-    photoURL: require('../../assets/images/justin.jpg'),
-    blockedIds: [],
-    notificationSettings: {
-      pairingNotification: true,
-      reminderNotification: true,
-      completionNotification: true,
-      quietHoursStart: 22,
-      quietHoursEnd: 8
-    },
-    snoozeTokensRemaining: 1,
-    snoozeTokenLastRefilled: new Date() as any,
-  },
-  'user2': {
-    id: 'user2',
-    email: 'duy@stanford.edu',
-    username: 'duy',
-    displayName: 'Duy',
-    createdAt: new Date() as any,
-    lastActive: new Date() as any,
-    isActive: true,
-    flakeStreak: 0,
-    maxFlakeStreak: 5,
-    photoURL: require('../../assets/images/duy.jpg'),
-    blockedIds: [],
-    notificationSettings: {
-      pairingNotification: true,
-      reminderNotification: true,
-      completionNotification: true,
-      quietHoursStart: 22,
-      quietHoursEnd: 8
-    },
-    snoozeTokensRemaining: 1,
-    snoozeTokenLastRefilled: new Date() as any,
-  },
-  'user3': {
-    id: 'user3',
-    email: 'kelvin@stanford.edu',
-    username: 'kelvin',
-    displayName: 'Kelvin',
-    createdAt: new Date() as any,
-    lastActive: new Date() as any,
-    isActive: true,
-    flakeStreak: 0,
-    maxFlakeStreak: 3,
-    photoURL: require('../../assets/images/kelvin.jpg'),
-    blockedIds: [],
-    notificationSettings: {
-      pairingNotification: true,
-      reminderNotification: true,
-      completionNotification: true,
-      quietHoursStart: 22,
-      quietHoursEnd: 8
-    },
-    snoozeTokensRemaining: 1,
-    snoozeTokenLastRefilled: new Date() as any,
-  },
-  'user4': {
-    id: 'user4',
-    email: 'vivian@stanford.edu',
-    username: 'vivian',
-    displayName: 'Vivian',
-    createdAt: new Date() as any,
-    lastActive: new Date() as any,
-    isActive: true,
-    flakeStreak: 0,
-    maxFlakeStreak: 1,
-    photoURL: require('../../assets/images/vivian.jpg'),
-    blockedIds: [],
-    notificationSettings: {
-      pairingNotification: true,
-      reminderNotification: true,
-      completionNotification: true,
-      quietHoursStart: 22,
-      quietHoursEnd: 8
-    },
-    snoozeTokensRemaining: 1,
-    snoozeTokenLastRefilled: new Date() as any,
-  },
-  'currentuser': {
-    id: 'currentuser',
-    email: 'me@stanford.edu',
-    username: 'mbernstein',
-    displayName: 'Michael Bernstein',
-    createdAt: new Date() as any,
-    lastActive: new Date() as any,
-    isActive: true,
-    flakeStreak: 1,
-    maxFlakeStreak: 3,
-    photoURL: require('../../assets/images/michael.jpg'),
-    blockedIds: [],
-    notificationSettings: {
-      pairingNotification: true,
-      reminderNotification: true,
-      completionNotification: true,
-      quietHoursStart: 22,
-      quietHoursEnd: 8
-    },
-    snoozeTokensRemaining: 1,
-    snoozeTokenLastRefilled: new Date() as any,
-  }
-};
+// Import types
+import { User, Pairing, Comment, NotificationSettings, PrivacySettings as UserPrivacySettings, UserFeedItem } from '../types';
 
-// Mock pairings
-const now = new Date();
-const yesterday = new Date(now);
-yesterday.setDate(yesterday.getDate() - 1);
-const twoDaysAgo = new Date(now);
-twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-const mockPairings: Record<string, Pairing> = {
-  'pairing1': {
-    id: 'pairing1',
-    date: now as any,
-    expiresAt: new Date(now.setHours(22, 0, 0, 0)) as any,
-    users: ['currentuser', 'user2'],
-    status: 'pending',
-    selfieURL: '',
-    isPrivate: false,
-    likes: 0,
-    likedBy: [],
-    comments: [],
-    virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing1'
-  },
-  'pairing2': {
-    id: 'pairing2',
-    date: yesterday as any,
-    expiresAt: new Date(yesterday.setHours(22, 0, 0, 0)) as any,
-    users: ['user3', 'user4'],
-    status: 'completed',
-    selfieURL: require('../../assets/images/pairing2.jpg'),
-    frontImage: require('../../assets/images/pairing2_front.jpg'),
-    backImage: require('../../assets/images/pairing2_back.jpg'),
-    completedAt: yesterday as any,
-    isPrivate: false,
-    likes: 3,
-    likedBy: ['user1', 'currentuser'],
-    comments: [
-      {
-        id: 'comment2',
-        userId: 'user1',
-        text: 'Awesome shot! Where was this taken?',
-        createdAt: yesterday as any,
-        username: 'justin',
-        userPhotoURL: require('../../assets/images/justin.jpg')
-      },
-      {
-        id: 'comment3',
-        userId: 'currentuser',
-        text: 'Looks like fun! 😊',
-        createdAt: yesterday as any,
-        username: 'mbernstein',
-        userPhotoURL: require('../../assets/images/michael.jpg')
-      }
-    ],
-    virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing2'
-  },
-  'pairing3': {
-    id: 'pairing3',
-    date: twoDaysAgo as any,
-    expiresAt: new Date(twoDaysAgo.setHours(22, 0, 0, 0)) as any,
-    users: ['currentuser', 'user3'],
-    status: 'completed',
-    selfieURL: require('../../assets/images/pairing3.jpg'),
-    frontImage: require('../../assets/images/pairing3_front.jpg'),
-    backImage: require('../../assets/images/pairing3_back.jpg'),
-    completedAt: twoDaysAgo as any,
-    isPrivate: false,
-    likes: 4,
-    likedBy: ['user1', 'user2', 'user4'],
-    comments: [],
-    virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing3'
-  },
-  'pairing4': {
-    id: 'pairing4',
-    date: twoDaysAgo as any,
-    expiresAt: new Date(twoDaysAgo.setHours(22, 0, 0, 0)) as any,
-    users: ['user1', 'user4'],
-    status: 'flaked',
-    selfieURL: '', // No image for flaked pairings
-    isPrivate: false,
-    likes: 0,
-    likedBy: [],
-    comments: [],
-    virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing4'
-  }
-};
-
-// Mock privacy settings
-const mockPrivacySettings: Record<string, UserPrivacySettings> = {
-  'currentuser': {
-    globalFeedOptIn: true,
-    blockedIds: []
-  },
-  'user1': {
-    globalFeedOptIn: true,
-    blockedIds: []
-  },
-  'user2': {
-    globalFeedOptIn: true,
-    blockedIds: []
-  },
-  'user3': {
-    globalFeedOptIn: true,
-    blockedIds: []
-  },
-  'user4': {
-    globalFeedOptIn: true,
-    blockedIds: []
-  }
-};
-
-// Mock feed items
-const mockFeedItems: Record<string, UserFeedItem[]> = {
-  'currentuser': [
-    {
-      pairingId: 'pairing2',
-      date: yesterday as any,
-      users: ['user3', 'user4'],
-      selfieURL: require('../../assets/images/pairing2.jpg'),
-      isPrivate: false,
-      status: 'completed',
-      likes: 3,
-      commentCount: 2
-    },
-    {
-      pairingId: 'pairing3',
-      date: twoDaysAgo as any,
-      users: ['currentuser', 'user3'],
-      selfieURL: require('../../assets/images/pairing3.jpg'),
-      isPrivate: false,
-      status: 'completed',
-      likes: 4,
-      commentCount: 0
-    },
-    {
-      pairingId: 'pairing4',
-      date: twoDaysAgo as any,
-      users: ['user1', 'user4'],
-      selfieURL: '', // No image for flaked pairings
-      isPrivate: false,
-      status: 'flaked',
-      likes: 0,
-      commentCount: 0
-    }
-  ]
-};
-
-// Mock push tokens
-const mockPushTokens: Record<string, string> = {
-  'currentuser': 'ExponentPushToken[XXXXXXXXXXXXXXXXXXXXXX]',
-  'user1': 'ExponentPushToken[XXXXXXXXXXXXXXXXXXXXXX]',
-  'user2': 'ExponentPushToken[XXXXXXXXXXXXXXXXXXXXXX]',
-  'user3': 'ExponentPushToken[XXXXXXXXXXXXXXXXXXXXXX]',
-  'user4': 'ExponentPushToken[XXXXXXXXXXXXXXXXXXXXXX]',
-};
+// Firebase imports
+import { Timestamp, addDoc, collection, doc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../config/firebase';
 
 /**
- * Enhanced Firebase service with social features
+ * Firebase service facade
  */
 const firebaseService = {
   /**
-   * Get current user
+   * User-related methods
    */
   getCurrentUser: async (): Promise<User | null> => {
-    // In a real app, would use Firebase Auth
-    // For demo, return mock user
-    return mockUsers['currentuser'];
+    // For this implementation, we'll need to get the current user ID from auth
+    // and then use that to fetch the user document
+    try {
+      const authUserId = "currentuser"; // This should be replaced with actual auth.currentUser.uid
+      return await UserService.getUserById(authUserId);
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      return null;
+    }
   },
   
-  /**
-   * Get user by ID
-   */
   getUserById: async (userId: string): Promise<User | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Return mock user if exists
-    return mockUsers[userId] || null;
+    return UserService.getUserById(userId);
   },
   
   /**
-   * Get current pairing for a user
+   * Pairing-related methods
    */
   getCurrentPairing: async (userId: string): Promise<Pairing | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Return mock pairing if exists
-    return mockPairings['pairing1'];
+    return PairingService.getCurrentPairing(userId);
   },
   
-  /**
-   * Get pairing history for a user
-   */
-  getPairingHistory: async (userId: string, limit: number = 10): Promise<Pairing[]> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Return mock pairings
-    return Object.values(mockPairings).filter(pairing => 
-      pairing.users.includes(userId) && pairing.status === 'completed'
-    ).slice(0, limit);
+  getPairingHistory: async (userId: string): Promise<Pairing[]> => {
+    return PairingService.getUserPairingHistory(userId);
   },
   
-  /**
-   * Get pairing by ID
-   */
   getPairingById: async (pairingId: string): Promise<Pairing | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Return mock pairing if exists
-    return mockPairings[pairingId] || null;
+    return PairingService.getPairingById(pairingId);
   },
   
-  /**
-   * Get user stats
-   */
   getUserStats: async (userId: string): Promise<any> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 400));
-    
-    // Return mock stats
-    return {
-      totalPairings: 27,
-      completedPairings: 23,
-      flakedPairings: 4,
-      completionRate: 0.85,
-      currentStreak: mockUsers[userId]?.flakeStreak || 0,
-      longestStreak: mockUsers[userId]?.maxFlakeStreak || 0,
-      uniqueConnections: 14
-    };
+    return PairingService.getUserStats(userId);
   },
   
-  /**
-   * Get user pairing history
-   */
   getUserPairingHistory: async (userId: string, limit: number = 10): Promise<Pairing[]> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 600));
-    
-    // Filter pairings where user is a participant
-    return Object.values(mockPairings)
-      .filter(pairing => pairing.users.includes(userId))
-      .sort((a, b) => {
-        const dateA = a.date instanceof Date ? a.date : new Date(a.date.seconds * 1000);
-        const dateB = b.date instanceof Date ? b.date : new Date(b.date.seconds * 1000);
-        return dateB.getTime() - dateA.getTime(); // Descending (newest first)
-      })
-      .slice(0, limit);
+    return PairingService.getUserPairingHistory(userId, limit);
   },
   
   /**
-   * Get feed
+   * Feed-related methods
    */
   getFeed: async (userId: string, limit: number = 10, startAfter?: any): Promise<{
     pairings: Pairing[];
     lastVisible: any;
     hasMore: boolean;
   }> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Get feed items
-    const feedItems = mockFeedItems[userId] || [];
-    
-    // Get full pairing data for each feed item
-    const pairings = await Promise.all(
-      feedItems.map(async (item) => {
-        const pairing = mockPairings[item.pairingId];
-        return pairing || null;
-      })
-    );
-    
-    // Filter out null values
-    const validPairings = pairings.filter(Boolean) as Pairing[];
-    
-    return {
-      pairings: validPairings.slice(0, limit),
-      lastVisible: null,
-      hasMore: false
-    };
+    return executeWithRetry(() => FeedService.getFeed(userId, limit, startAfter));
   },
   
-  /**
-   * Get global feed
-   */
   getGlobalFeed: async (limit: number = 10, startAfter?: any): Promise<{
     pairings: Pairing[];
     lastVisible: any;
     hasMore: boolean;
   }> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Filter public pairings
-    const publicPairings = Object.values(mockPairings)
-      .filter(pairing => !pairing.isPrivate && pairing.status === 'completed')
-      .sort((a, b) => {
-        const dateA = a.date instanceof Date ? a.date : new Date(a.date.seconds * 1000);
-        const dateB = b.date instanceof Date ? b.date : new Date(b.date.seconds * 1000);
-        return dateB.getTime() - dateA.getTime(); // Descending (newest first)
-      });
-    
-    return {
-      pairings: publicPairings.slice(0, limit),
-      lastVisible: null,
-      hasMore: publicPairings.length > limit
-    };
+    return executeWithRetry(() => FeedService.getGlobalFeed(limit, startAfter));
   },
   
   /**
-   * Complete pairing
+   * Pairing interaction methods
    */
   completePairing: async (
     pairingId: string,
@@ -441,348 +123,206 @@ const firebaseService = {
     backImage: string,
     isPrivate: boolean
   ): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    
-    // In a real app, would upload images to storage and update Firestore
-    // For demo, just update mock pairing
-    const pairing = mockPairings[pairingId];
-    if (pairing) {
-      pairing.status = 'completed';
-      pairing.frontImage = frontImage;
-      pairing.backImage = backImage;
-      pairing.selfieURL = frontImage; // In real app, would be stitched image
-      pairing.isPrivate = isPrivate;
-      pairing.completedAt = new Date() as any;
-    }
+    return PairingService.completePairing(pairingId, userId, frontImage, backImage, isPrivate);
   },
   
-  /**
-   * Toggle like on a pairing
-   */
   toggleLikePairing: async (pairingId: string, userId: string): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // In a real app, would update Firestore
-    // For demo, just update mock pairing
-    const pairing = mockPairings[pairingId];
-    if (pairing) {
-      const userLikeIndex = pairing.likedBy.indexOf(userId);
-      if (userLikeIndex === -1) {
-        // Add like
-        pairing.likedBy.push(userId);
-        pairing.likes += 1;
-      } else {
-        // Remove like
-        pairing.likedBy.splice(userLikeIndex, 1);
-        pairing.likes = Math.max(0, pairing.likes - 1);
-      }
-    }
+    return PairingService.toggleLikePairing(pairingId, userId);
   },
   
-  /**
-   * Add comment to a pairing
-   */
   addCommentToPairing: async (
     pairingId: string,
     userId: string,
     text: string
   ): Promise<Comment> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const user = await UserService.getUserById(userId);
+    if (!user) throw new Error('User not found');
     
-    // Create comment
-    const user = mockUsers[userId];
-    const comment: Comment = {
-      id: uuidv4(),
-      userId,
-      text,
-      createdAt: new Date() as any,
-      username: user?.username || 'User',
-      userPhotoURL: user?.photoURL || require('../../assets/images/michael.jpg')
-    };
-    
-    // In a real app, would update Firestore
-    // For demo, just update mock pairing
-    const pairing = mockPairings[pairingId];
-    if (pairing) {
-      if (!pairing.comments) {
-        pairing.comments = [];
-      }
-      pairing.comments.push(comment);
-    }
-    
-    return comment;
+    return PairingService.addCommentToPairing(
+      pairingId, 
+      userId, 
+      user.username || 'User', 
+      user.photoURL || '', 
+      text
+    );
   },
   
-  /**
-   * Update feed item comment count
-   */
   updateFeedItemCommentCount: async (pairingId: string, excludeUserId?: string): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // In a real app, would update Firestore
-    // For demo, log the action
-    console.log(`Updating comment count for pairing ${pairingId}`);
+    console.log('updateFeedItemCommentCount not yet implemented');
   },
   
-  /**
-   * Apply snooze token
-   */
   applySnoozeToken: async (userId: string, pairingId: string): Promise<boolean> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 700));
-    
-    // Check if user has tokens
-    const user = mockUsers[userId];
-    if (!user || user.snoozeTokensRemaining <= 0) {
-      return false;
-    }
-    
-    // Update user tokens
-    user.snoozeTokensRemaining -= 1;
-    
-    // Update pairing status
-    const pairing = mockPairings[pairingId];
-    if (pairing) {
-      pairing.status = 'snoozed';
-    }
-    
-    return true;
+    return PairingService.applySnoozeToken(userId, pairingId);
   },
   
-  /**
-   * Send pairing reminder
-   */
   sendPairingReminder: async (
     pairingId: string,
     senderId: string,
     recipientId: string
   ): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 700));
-    
-    // In a real app, would send push notification
-    console.log(`Reminder sent from ${senderId} to ${recipientId} for pairing ${pairingId}`);
+    try {
+      // Get the recipient's push token
+      const recipient = await UserService.getUserById(recipientId);
+      if (!recipient) throw new Error('Recipient not found');
+      
+      // Get the sender's name for the notification
+      const sender = await UserService.getUserById(senderId);
+      const senderName = sender ? (sender.displayName || sender.username) : 'Your partner';
+      
+      // In a real implementation, this would send a push notification
+      // For now, we'll just record it in the database
+      await addDoc(collection(db, 'reminders'), {
+        pairingId,
+        senderId,
+        recipientId,
+        createdAt: Timestamp.now(),
+        message: `${senderName} is waiting for your photo. Complete your pairing before it expires!`
+      });
+      
+      // Update the pairing to indicate a reminder was sent
+      const pairingRef = doc(db, 'pairings', pairingId);
+      await updateDoc(pairingRef, {
+        lastReminderAt: Timestamp.now(),
+        lastReminderBy: senderId
+      });
+      
+      console.log(`Reminder sent from ${senderId} to ${recipientId} for pairing ${pairingId}`);
+    } catch (error) {
+      console.error('Error sending pairing reminder:', error);
+      throw error;
+    }
   },
   
   /**
-   * Get user notification settings
+   * User settings methods
    */
   getUserNotificationSettings: async (userId: string): Promise<NotificationSettings | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Return mock settings
-    return mockUsers[userId]?.notificationSettings || null;
+    return UserService.getUserNotificationSettings(userId);
   },
   
-  /**
-   * Get user privacy settings
-   */
   getUserPrivacySettings: async (userId: string): Promise<UserPrivacySettings | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Return mock settings
-    return mockPrivacySettings[userId] || null;
+    console.log('getUserPrivacySettings not yet implemented');
+    return null;
   },
   
-  /**
-   * Get user push token
-   */
   getUserPushToken: async (userId: string): Promise<string | null> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // Return mock token
-    return mockPushTokens[userId] || null;
+    const user = await UserService.getUserById(userId);
+    return user?.fcmToken || null;
   },
   
-  /**
-   * Update user push token
-   */
   updateUserPushToken: async (userId: string, token: string): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // In a real app, would update Firestore
-    mockPushTokens[userId] = token;
-    console.log(`Updated push token for ${userId}: ${token}`);
+    return UserService.updateUserFcmToken(userId, token);
   },
   
-  /**
-   * Update user notification settings
-   */
   updateUserNotificationSettings: async (
     userId: string,
     settings: Partial<NotificationSettings>
   ): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // In a real app, would update Firestore
-    // For demo, just update mock user
-    const user = mockUsers[userId];
-    if (user && user.notificationSettings) {
-      user.notificationSettings = {
-        ...user.notificationSettings,
-        ...settings
-      };
-    }
+    return UserService.updateUserNotificationSettings(userId, settings);
   },
   
-  /**
-   * Update user privacy settings
-   */
   updateUserPrivacySettings: async (
     userId: string,
     settings: Partial<UserPrivacySettings>
   ): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 400));
-    
-    // In a real app, would update Firestore
-    // For demo, update mock settings
-    const currentSettings = mockPrivacySettings[userId] || {
-      globalFeedOptIn: true,
-      blockedIds: []
-    };
-    
-    mockPrivacySettings[userId] = {
-      ...currentSettings,
-      ...settings
-    };
-    
-    console.log(`Updated privacy settings for ${userId}:`, mockPrivacySettings[userId]);
+    console.log('updateUserPrivacySettings not yet implemented');
   },
   
-  /**
-   * Block user
-   */
   blockUser: async (userId: string, blockedUserId: string): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Update privacy settings
-    const settings = mockPrivacySettings[userId] || {
-      globalFeedOptIn: true,
-      blockedIds: []
-    };
-    
-    if (!settings.blockedIds.includes(blockedUserId)) {
-      settings.blockedIds.push(blockedUserId);
-    }
-    
-    mockPrivacySettings[userId] = settings;
-    
-    // Update user's blockedIds
-    const user = mockUsers[userId];
-    if (user) {
-      if (!user.blockedIds) {
-        user.blockedIds = [];
-      }
-      
-      if (!user.blockedIds.includes(blockedUserId)) {
-        user.blockedIds.push(blockedUserId);
-      }
-    }
+    return UserService.updateBlockedUser(userId, blockedUserId, 'block');
   },
   
-  /**
-   * Unblock user
-   */
   unblockUser: async (userId: string, blockedUserId: string): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Update privacy settings
-    const settings = mockPrivacySettings[userId];
-    if (settings && settings.blockedIds) {
-      settings.blockedIds = settings.blockedIds.filter(id => id !== blockedUserId);
-    }
-    
-    // Update user's blockedIds
-    const user = mockUsers[userId];
-    if (user && user.blockedIds) {
-      user.blockedIds = user.blockedIds.filter(id => id !== blockedUserId);
-    }
+    return UserService.updateBlockedUser(userId, blockedUserId, 'unblock');
   },
   
-  /**
-   * Get blocked users
-   */
   getBlockedUsers: async (userId: string): Promise<User[]> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 600));
-    
-    // Get blocked IDs
-    const settings = mockPrivacySettings[userId];
-    const blockedIds = settings?.blockedIds || [];
-    
-    // Get user data for each blocked ID
+    const blockedIds = await UserService.getBlockedUsers(userId);
     const blockedUsers: User[] = [];
-    
     for (const id of blockedIds) {
-      const user = mockUsers[id];
-      if (user) {
-        blockedUsers.push(user);
-      }
+      const user = await UserService.getUserById(id);
+      if (user) blockedUsers.push(user);
     }
-    
     return blockedUsers;
   },
   
-  /**
-   * Update pairing privacy
-   */
   updatePairingPrivacy: async (
     pairingId: string,
     isPrivate: boolean,
     userId: string
   ): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 400));
-    
-    // Update pairing
-    const pairing = mockPairings[pairingId];
-    if (pairing) {
-      // Check if user is a participant
-      if (!pairing.users.includes(userId)) {
-        throw new Error('Unauthorized');
-      }
-      
-      pairing.isPrivate = isPrivate;
-    }
+    return PairingService.updatePairingPrivacy(pairingId, isPrivate, userId);
   },
   
   /**
-   * Sign in user
+   * Authentication methods 
    */
   signIn: async (email: string, password: string): Promise<User> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // In a real app, would use Firebase Auth
-    // For demo, return mock user
-    if (email === 'demo@example.com' && password === 'password') {
-      return mockUsers['currentuser'];
-    }
-    
-    throw new Error('Invalid email or password');
+    const now = Timestamp.now();
+    const mockUser: User = {
+      id: 'currentuser',
+      email: email,
+      username: 'demo',
+      displayName: 'Demo User',
+      photoURL: 'https://example.com/demo.jpg',
+      createdAt: now,
+      lastUpdated: now,
+      isActive: true,
+      flakeStreak: 0,
+      maxFlakeStreak: 0,
+      connections: [],
+      snoozeTokensRemaining: 0,
+      privacySettings: { globalFeedOptIn: true },
+      notificationSettings: {
+        pairingNotification: true,
+        chatNotification: true,
+        reminderNotification: true,
+        socialNotification: true,
+        completionNotification: true,
+        quietHoursStart: 22,
+        quietHoursEnd: 8
+      },
+      blockedIds: [],
+      fcmToken: ''
+    };
+    return mockUser;
+  },
+  
+  signOut: async (): Promise<void> => {
+    console.log('Sign out called');
+  },
+
+  /**
+   * Updates a pairing document with the photo URL and privacy status.
+   * This now calls the method in PairingService.
+   */
+  updatePairingWithPhoto: async (
+    pairingId: string,
+    userId: string,
+    photoUrl: string,
+    isPrivate: boolean
+  ): Promise<void> => {
+    // Delegate to PairingService
+    return PairingService.updatePairingWithPhoto(pairingId, userId, photoUrl, isPrivate);
   },
   
   /**
-   * Sign out user
+   * Submit a photo for a pairing - handles the full process from image URI to completion
    */
-  signOut: async (): Promise<void> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
+  submitPairingPhoto: async (
+    pairingId: string,
+    userId: string,
+    photoUri: string,
+    isPrivate: boolean = false
+  ): Promise<void> => {
+    // Step 1: Upload the image to Firebase Storage
+    const imageRef = ref(storage, `pairings/${pairingId}/${userId}_photo.jpg`);
+    const imageBlob = await (await fetch(photoUri)).blob();
+    await uploadBytes(imageRef, imageBlob);
+    const photoUrl = await getDownloadURL(imageRef);
     
-    // In a real app, would use Firebase Auth
-    console.log('User signed out');
+    // Step 2: Update the pairing with the photo URL
+    return PairingService.updatePairingWithPhoto(pairingId, userId, photoUrl, isPrivate);
   },
 };
 

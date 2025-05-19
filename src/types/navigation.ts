@@ -4,6 +4,22 @@
  * Type definitions for navigation-related data.
  */
 
+export type MainStackParamList = {
+  TabNavigator: undefined;
+  Camera: undefined;
+  PhotoPreview: {
+    frontImage: string;
+    backImage: string;
+    pairingId?: string;
+  };
+  PairingDetail: { pairingId: string };
+  Pairing: undefined;
+  Chat: { chatId: string; pairingId: string };
+  FindFriends: undefined;
+  Settings: undefined;
+  BlockedUsers: undefined;
+};
+
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;

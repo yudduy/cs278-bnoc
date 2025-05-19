@@ -2,23 +2,24 @@
  * PermissionsScreen
  * 
  * Handles requesting necessary permissions during onboarding.
+ * Updated with black and white theme.
  */
 
 import React, { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
   Switch,
   Platform,
+  StatusBar
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../config/colors';
-import { globalStyles } from '../../styles/globalStyles';
+import { COLORS } from '../../config/theme';
+import { onboardingStyles } from './OnboardingStyles';
 
 const PermissionsScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -53,202 +54,115 @@ const PermissionsScreen: React.FC = () => {
   };
   
   return (
-    <SafeAreaView style={globalStyles.container}>
-      <View style={styles.container}>
-        <View style={styles.header}>
+    <SafeAreaView style={onboardingStyles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <View style={onboardingStyles.container}>
+        {/* Header with back button */}
+        <View style={onboardingStyles.header}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={onboardingStyles.backButton}
             onPress={handleBack}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+            <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Permissions</Text>
-          <View style={{ width: 24 }} />
+          <Text style={onboardingStyles.headerTitle}>App Permissions</Text>
+          <View style={{ width: 40 }} />
         </View>
         
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>App Permissions</Text>
-          <Text style={styles.subtitle}>
-            Daily Meetup needs a few permissions to work properly.
+        <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+          {/* Title and subtitle */}
+          <Text style={onboardingStyles.title}>Enable Access</Text>
+          <Text style={onboardingStyles.subtitle}>
+            BNOC needs these permissions to connect you with others
           </Text>
           
-          <View style={styles.permissionsContainer}>
-            <View style={styles.permissionItem}>
-              <View style={styles.permissionInfo}>
-                <View style={[styles.permissionIcon, { backgroundColor: COLORS.primary }]}>
-                  <Ionicons name="camera" size={24} color="#FFFFFF" />
+          {/* Progress indicator */}
+          <View style={onboardingStyles.progressContainer}>
+            <View style={onboardingStyles.progressDot} />
+            <View style={[onboardingStyles.progressDot, onboardingStyles.progressDotActive]} />
+            <View style={onboardingStyles.progressDot} />
+            <View style={onboardingStyles.progressDot} />
+          </View>
+          
+          {/* Permissions list */}
+          <View style={onboardingStyles.permissionsContainer}>
+            {/* Camera Permission */}
+            <View style={onboardingStyles.permissionItem}>
+              <View style={onboardingStyles.permissionInfo}>
+                <View style={[onboardingStyles.permissionIcon, { borderColor: cameraPermission ? COLORS.primary : COLORS.border }]}>
+                  <Ionicons name="camera-outline" size={24} color={COLORS.primary} />
                 </View>
-                <View style={styles.permissionText}>
-                  <Text style={styles.permissionTitle}>Camera</Text>
-                  <Text style={styles.permissionDescription}>
-                    Required to take selfies for your daily pairings.
+                <View style={onboardingStyles.permissionText}>
+                  <Text style={onboardingStyles.permissionTitle}>Camera Access</Text>
+                  <Text style={onboardingStyles.permissionDescription}>
+                    To take your daily meetup selfie with your partner
                   </Text>
                 </View>
               </View>
               <Switch
                 value={cameraPermission}
                 onValueChange={handleCameraPermission}
-                trackColor={{ false: COLORS.borderDark, true: COLORS.primary }}
-                thumbColor={Platform.OS === 'ios' ? '#FFFFFF' : cameraPermission ? '#FFFFFF' : '#F5F5F5'}
+                trackColor={{ false: COLORS.border, true: COLORS.backgroundLight }}
+                thumbColor={cameraPermission ? COLORS.primary : COLORS.textSecondary}
+                ios_backgroundColor={COLORS.border}
               />
             </View>
             
-            <View style={styles.permissionItem}>
-              <View style={styles.permissionInfo}>
-                <View style={[styles.permissionIcon, { backgroundColor: COLORS.accent }]}>
-                  <Ionicons name="notifications" size={24} color="#FFFFFF" />
+            {/* Notifications Permission */}
+            <View style={onboardingStyles.permissionItem}>
+              <View style={onboardingStyles.permissionInfo}>
+                <View style={[onboardingStyles.permissionIcon, { borderColor: notificationPermission ? COLORS.primary : COLORS.border }]}>
+                  <Ionicons name="notifications-outline" size={24} color={COLORS.primary} />
                 </View>
-                <View style={styles.permissionText}>
-                  <Text style={styles.permissionTitle}>Notifications</Text>
-                  <Text style={styles.permissionDescription}>
-                    Get notified about your daily pairings and when your partner completes a selfie.
+                <View style={onboardingStyles.permissionText}>
+                  <Text style={onboardingStyles.permissionTitle}>Enable Notifications</Text>
+                  <Text style={onboardingStyles.permissionDescription}>
+                    So you don't miss your daily pair and important updates
                   </Text>
                 </View>
               </View>
               <Switch
                 value={notificationPermission}
                 onValueChange={handleNotificationPermission}
-                trackColor={{ false: COLORS.borderDark, true: COLORS.accent }}
-                thumbColor={Platform.OS === 'ios' ? '#FFFFFF' : notificationPermission ? '#FFFFFF' : '#F5F5F5'}
+                trackColor={{ false: COLORS.border, true: COLORS.backgroundLight }}
+                thumbColor={notificationPermission ? COLORS.primary : COLORS.textSecondary}
+                ios_backgroundColor={COLORS.border}
               />
             </View>
           </View>
           
-          <View style={styles.infoContainer}>
+          {/* Info box */}
+          <View style={onboardingStyles.infoContainer}>
             <Ionicons name="information-circle-outline" size={24} color={COLORS.textSecondary} />
-            <Text style={styles.infoText}>
+            <Text style={onboardingStyles.infoText}>
               You can change these permissions later in the app settings.
             </Text>
           </View>
         </ScrollView>
         
-        <TouchableOpacity
-          style={[
-            styles.nextButton,
-            !cameraPermission && styles.disabledButton
-          ]}
-          onPress={handleNext}
-          disabled={!cameraPermission}
-        >
-          <Text style={styles.nextButtonText}>Continue</Text>
-        </TouchableOpacity>
+        {/* Navigation buttons */}
+        <View style={{ marginBottom: 24 }}>
+          <TouchableOpacity
+            style={[
+              onboardingStyles.primaryButton,
+              !cameraPermission && onboardingStyles.disabledButton
+            ]}
+            onPress={handleNext}
+            disabled={!cameraPermission}
+          >
+            <Text style={onboardingStyles.primaryButtonText}>Continue</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={{ alignItems: 'center', marginTop: 8 }}
+            onPress={handleBack}
+          >
+            <Text style={{ color: COLORS.textSecondary, fontFamily: 'ChivoRegular' }}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: COLORS.text,
-  },
-  content: {
-    padding: 24,
-    paddingBottom: 100,
-  },
-  title: {
-    fontFamily: 'ChivoBold',
-    fontSize: 24,
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginBottom: 32,
-  },
-  permissionsContainer: {
-    marginBottom: 32,
-  },
-  permissionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-  },
-  permissionInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 16,
-  },
-  permissionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  permissionText: {
-    flex: 1,
-  },
-  permissionTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  permissionDescription: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-  },
-  infoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.backgroundLight,
-    padding: 16,
-    borderRadius: 12,
-  },
-  infoText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginLeft: 12,
-    flex: 1,
-    lineHeight: 20,
-  },
-  nextButton: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  disabledButton: {
-    backgroundColor: COLORS.disabled,
-  },
-  nextButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: '#FFFFFF',
-  },
-});
 
 export default PermissionsScreen;

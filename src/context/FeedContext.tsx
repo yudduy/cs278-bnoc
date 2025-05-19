@@ -93,7 +93,7 @@ export const FeedProvider: React.FC<FeedProviderProps> = ({
       // Get feed data
       const result = await firebaseService.getFeed(
         user.id,
-        initialPageSize,
+        Number(initialPageSize),
         refresh ? undefined : pagination.lastVisible
       );
       

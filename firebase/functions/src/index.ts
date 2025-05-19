@@ -1,31 +1,21 @@
 /**
- * Cloud Functions for Daily Meetup Selfie App
+ * Cloud Functions for Daily Meetup Selfie app
  * 
- * This file serves as the entry point for all Firebase Cloud Functions.
- * It initializes Firebase Admin SDK and exports all functions.
+ * Main index file exports all functions
  */
 
-import * as admin from 'firebase-admin';
-admin.initializeApp();
-
-// Import pairing functions
-import { pairUsers, markExpiredPairingsAsFlaked } from './pairing/pairUsers';
-
-// Import notification functions
-import { 
-  sendPairingNotifications,
-  sendReminderNotifications,
-  sendFinalReminderNotifications
-} from './notifications/pairingNotifications';
+// Import function groups
+import * as pairingFunctions from './pairing';
+import * as notificationFunctions from './notifications';
+import * as feedFunctions from './pairing/feedUpdates';
 
 // Export all functions
-export {
-  // Pairing functions
-  pairUsers,
-  markExpiredPairingsAsFlaked,
-  
-  // Notification functions
-  sendPairingNotifications,
-  sendReminderNotifications,
-  sendFinalReminderNotifications
-};
+export const pairUsersDaily = pairingFunctions.pairUsersDaily;
+export const markExpiredPairingsAsFlaked = pairingFunctions.markExpiredPairingsAsFlaked;
+
+export const onNewChatMessage = notificationFunctions.onNewChatMessage;
+export const onPhotoSubmission = notificationFunctions.onPhotoSubmission;
+export const onPairingCompleted = notificationFunctions.onPairingCompleted;
+
+export const updateFeedsOnPairingUpdate = feedFunctions.updateFeedsOnPairingUpdate;
+export const archiveOldFeedItems = feedFunctions.archiveOldFeedItems;

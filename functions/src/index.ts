@@ -9,6 +9,9 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { Timestamp } from 'firebase-admin/firestore';
 
+// Import custom Cloud Functions
+import { checkFlakesDaily } from './pairing/checkFlakes';
+
 // Initialize Firebase Admin SDK
 admin.initializeApp();
 
@@ -160,6 +163,9 @@ export const pairUsers = functions.pubsub
       return { success: false, error: error.message };
     }
   });
+
+// Export the checkFlakesDaily function
+export { checkFlakesDaily };
 
 /**
  * Mark expired pairings as flaked at 10:05 PM PT

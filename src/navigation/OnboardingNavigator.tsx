@@ -2,11 +2,12 @@
  * OnboardingNavigator
  * 
  * Navigation stack for onboarding screens shown after authentication
- * but before main app access.
+ * but before main app access. Updated with black and white theme and
+ * smooth transitions.
  */
 
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
 import { COLORS } from '../config/theme';
 
 // Import mock screens (create placeholder screens for demo)
@@ -24,7 +25,25 @@ const OnboardingNavigator = () => {
       initialRouteName="Welcome"
       screenOptions={{
         headerShown: false,
-        cardStyle: { backgroundColor: COLORS.background }
+        cardStyle: { backgroundColor: COLORS.background },
+        cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
+        // Add transition animation options
+        transitionSpec: {
+          open: {
+            animation: 'timing',
+            config: {
+              duration: 300,
+            },
+          },
+          close: {
+            animation: 'timing',
+            config: {
+              duration: 300,
+            },
+          },
+        },
+        // Disable gesture navigation in onboarding flow for more guided experience
+        gestureEnabled: false,
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />

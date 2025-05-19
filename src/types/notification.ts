@@ -7,11 +7,13 @@
 import { Timestamp } from './index';
 
 export interface NotificationSettings {
-  pairingNotification: boolean;
-  reminderNotification: boolean;
-  completionNotification: boolean;
-  quietHoursStart: number; // 0-23 hours
-  quietHoursEnd: number; // 0-23 hours
+  pairingNotification: boolean; // For new pairing assignment
+  chatNotification: boolean; // For new messages in pairing chat
+  partnerPhotoSubmittedNotification: boolean; // When partner submits their photo
+  reminderNotification: boolean; // For incomplete pairings
+  socialNotifications: boolean; // Likes, comments on their posts
+  quietHoursStart?: number; // 0-23 hour (local time)
+  quietHoursEnd?: number; // 0-23 hour (local time)
 }
 
 export interface PushNotification {

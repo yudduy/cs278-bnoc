@@ -33,8 +33,6 @@ import firebaseService from '../../services/firebase';
 import { formatDate } from '../../utils/dateUtils';
 import { Pairing, User } from '../../types';
 
-// Default avatar placeholder
-const defaultAvatar = 'https://via.placeholder.com/150';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const PairingDetailScreen: React.FC = () => {
@@ -282,7 +280,7 @@ const PairingDetailScreen: React.FC = () => {
               onPress={() => user1 && navigateToProfile(user1.id)}
             >
               <Image
-                source={{ uri: user1?.photoURL || defaultAvatar }}
+                source={user1?.photoURL ? { uri: user1.photoURL } : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }}
                 style={styles.userAvatar}
               />
               <Text style={styles.userName}>{user1?.displayName || 'User'}</Text>
@@ -299,7 +297,7 @@ const PairingDetailScreen: React.FC = () => {
               onPress={() => user2 && navigateToProfile(user2.id)}
             >
               <Image
-                source={{ uri: user2?.photoURL || defaultAvatar }}
+                source={user2?.photoURL ? { uri: user2.photoURL } : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }}
                 style={styles.userAvatar}
               />
               <Text style={styles.userName}>{user2?.displayName || 'User'}</Text>

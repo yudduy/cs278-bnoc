@@ -1,7 +1,7 @@
 /**
  * FeedScreen
  * 
- * Enhanced feed screen with improved social features, pagination, and animations.
+ * Enhanced feed screen with black and white BeReal-inspired UI.
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -24,10 +24,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { Pairing, User } from '../../types';
-import PairingCard from '../../components/feed/PairingCard';
+import PostCard from '../../components/feed/PostCard';
 import { useAuth } from '../../context/AuthContext';
 import { usePairing } from '../../context/PairingContext';
 import firebaseService from '../../services/firebase';
+import { RouteProp } from '@react-navigation/native';
+import { MainTabParamList } from '../../types/navigation';
+
+// Default avatar image fallback
+const defaultAvatar = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 
 const FeedScreen: React.FC = () => {
   // State
@@ -54,7 +59,7 @@ const FeedScreen: React.FC = () => {
   const navigation = useNavigation();
   
   // Get route params (for scrolling to a specific pairing)
-  const route = useRoute();
+  const route = useRoute<RouteProp<MainTabParamList, 'Feed'>>();
   const scrollToPairingId = route.params?.scrollToPairingId;
   
   // Ref for FlatList
@@ -99,8 +104,15 @@ const FeedScreen: React.FC = () => {
    * @param refresh Whether to refresh from the beginning
    */
   const loadFeed = useCallback(async (refresh = false) => {
+    if (!user?.id) {
+      console.log('Cannot load feed: No authenticated user');
+      return;
+    }
+    
     if (refresh) {
       setRefreshing(true);
+      // Reset pagination when refreshing
+      lastVisible.current = null;
     } else {
       setLoadingMore(true);
     }
@@ -108,9 +120,55 @@ const FeedScreen: React.FC = () => {
     setError(null);
     
     try {
-      // In a real app, would fetch from Firestore with pagination
-      // For demo, use mock data
-      await createMockFeed(refresh);
+      console.log('Loading feed data from Firebase...');
+      
+      // Get feed from Firebase with pagination
+      const result = await firebaseService.getFeed(
+        user.id,
+        10, // Limit
+        refresh ? null : lastVisible.current
+      );
+      
+      const { pairings: newPairings, lastVisible: newLastVisible, hasMore: newHasMore } = result;
+      
+      console.log(`Loaded ${newPairings.length} pairings from Firebase`);
+      
+      // Update state with actual data
+      if (refresh) {
+        setPairings(newPairings);
+      } else {
+        setPairings(prev => [...prev, ...newPairings]);
+      }
+      
+      // Update pagination state
+      lastVisible.current = newLastVisible;
+      setHasMore(newHasMore);
+      
+      // Fetch user data for displayed pairings
+      const userIds = new Set<string>();
+      newPairings.forEach(pairing => {
+        if (pairing.users) {
+          pairing.users.forEach(userId => userIds.add(userId));
+        }
+      });
+      
+      // Get all users in parallel
+      const userPromises = Array.from(userIds).map(userId => 
+        firebaseService.getUserById(userId)
+      );
+      
+      const fetchedUsers = await Promise.all(userPromises);
+      
+      // Create users object
+      const newUsers: Record<string, User> = {};
+      fetchedUsers.forEach(user => {
+        if (user) {
+          newUsers[user.id] = user;
+        }
+      });
+      
+      // Update users state
+      setUsers(prev => refresh ? newUsers : { ...prev, ...newUsers });
     } catch (error) {
       console.error('Error loading feed:', error);
       setError('Failed to load feed. Pull down to try again.');
@@ -121,261 +179,7 @@ const FeedScreen: React.FC = () => {
     }
   }, [user?.id]);
   
-  /**
-   * Create mock feed data for development
-   */
-  const createMockFeed = async (refresh: boolean) => {
-    // Create mock users with profile images
-    const mockUsers: Record<string, User> = {
-      'user1': {
-        id: 'user1',
-        email: 'justin@stanford.edu',
-        username: 'justin',
-        displayName: 'Justin',
-        createdAt: new Date() as any,
-        lastActive: new Date() as any,
-        isActive: true,
-        flakeStreak: 0,
-        maxFlakeStreak: 2,
-        photoURL: 'https://picsum.photos/100/100?random=1',
-        blockedIds: [],
-        notificationSettings: {
-          pairingNotification: true,
-          reminderNotification: true,
-          completionNotification: true,
-          quietHoursStart: 22,
-          quietHoursEnd: 8
-        },
-        snoozeTokensRemaining: 1,
-        snoozeTokenLastRefilled: new Date() as any,
-      },
-      'user2': {
-        id: 'user2',
-        email: 'duy@stanford.edu',
-        username: 'duy',
-        displayName: 'Duy',
-        createdAt: new Date() as any,
-        lastActive: new Date() as any,
-        isActive: true,
-        flakeStreak: 0,
-        maxFlakeStreak: 5,
-        photoURL: 'https://picsum.photos/100/100?random=2',
-        blockedIds: [],
-        notificationSettings: {
-          pairingNotification: true,
-          reminderNotification: true,
-          completionNotification: true,
-          quietHoursStart: 22,
-          quietHoursEnd: 8
-        },
-        snoozeTokensRemaining: 1,
-        snoozeTokenLastRefilled: new Date() as any,
-      },
-      'user3': {
-        id: 'user3',
-        email: 'kelvin@stanford.edu',
-        username: 'kelvin',
-        displayName: 'Kelvin',
-        createdAt: new Date() as any,
-        lastActive: new Date() as any,
-        isActive: true,
-        flakeStreak: 0,
-        maxFlakeStreak: 3,
-        photoURL: 'https://picsum.photos/100/100?random=3',
-        blockedIds: [],
-        notificationSettings: {
-          pairingNotification: true,
-          reminderNotification: true,
-          completionNotification: true,
-          quietHoursStart: 22,
-          quietHoursEnd: 8
-        },
-        snoozeTokensRemaining: 1,
-        snoozeTokenLastRefilled: new Date() as any,
-      },
-      'user4': {
-        id: 'user4',
-        email: 'vivian@stanford.edu',
-        username: 'vivian',
-        displayName: 'Vivian',
-        createdAt: new Date() as any,
-        lastActive: new Date() as any,
-        isActive: true,
-        flakeStreak: 0,
-        maxFlakeStreak: 1,
-        photoURL: 'https://picsum.photos/100/100?random=4',
-        blockedIds: [],
-        notificationSettings: {
-          pairingNotification: true,
-          reminderNotification: true,
-          completionNotification: true,
-          quietHoursStart: 22,
-          quietHoursEnd: 8
-        },
-        snoozeTokensRemaining: 1,
-        snoozeTokenLastRefilled: new Date() as any,
-      },
-      'currentuser': {
-        id: 'currentuser',
-        email: 'me@stanford.edu',
-        username: 'mbernstein',
-        displayName: 'Michael Bernstein',
-        createdAt: new Date() as any,
-        lastActive: new Date() as any,
-        isActive: true,
-        flakeStreak: 1,
-        maxFlakeStreak: 3,
-        photoURL: 'https://picsum.photos/100/100?random=me',
-        blockedIds: [],
-        notificationSettings: {
-          pairingNotification: true,
-          reminderNotification: true,
-          completionNotification: true,
-          quietHoursStart: 22,
-          quietHoursEnd: 8
-        },
-        snoozeTokensRemaining: 1,
-        snoozeTokenLastRefilled: new Date() as any,
-      }
-    };
-    
-    // Create mock pairings
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const twoDaysAgo = new Date(now);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const threeDaysAgo = new Date(now);
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-    
-    const mockPairings: Pairing[] = [
-      {
-        id: 'pairing1',
-        date: now as any,
-        expiresAt: new Date(now.setHours(22, 0, 0, 0)) as any,
-        users: ['user1', 'user2'],
-        status: 'completed',
-        selfieURL: 'https://picsum.photos/600/800?random=1',
-        frontImage: 'https://picsum.photos/300/400?random=1a',
-        backImage: 'https://picsum.photos/300/400?random=1b',
-        completedAt: now as any,
-        isPrivate: false,
-        likes: 5,
-        likedBy: ['user3', 'user4'],
-        comments: [
-          {
-            id: 'comment1',
-            userId: 'user3',
-            text: 'Great selfie! Love the location!',
-            createdAt: now as any,
-            username: 'kelvin',
-            userPhotoURL: 'https://picsum.photos/100/100?random=3'
-          }
-        ],
-        virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing1'
-      },
-      {
-        id: 'pairing2',
-        date: yesterday as any,
-        expiresAt: new Date(yesterday.setHours(22, 0, 0, 0)) as any,
-        users: ['user3', 'user4'],
-        status: 'completed',
-        selfieURL: 'https://picsum.photos/600/800?random=2',
-        frontImage: 'https://picsum.photos/300/400?random=2a',
-        backImage: 'https://picsum.photos/300/400?random=2b',
-        completedAt: yesterday as any,
-        isPrivate: false,
-        likes: 3,
-        likedBy: ['user1', 'currentuser'],
-        comments: [
-          {
-            id: 'comment2',
-            userId: 'user1',
-            text: 'Awesome shot! Where was this taken?',
-            createdAt: yesterday as any,
-            username: 'justin',
-            userPhotoURL: 'https://picsum.photos/100/100?random=1'
-          },
-          {
-            id: 'comment3',
-            userId: 'currentuser',
-            text: 'Looks like fun! 😊',
-            createdAt: yesterday as any,
-            username: 'mbernstein',
-            userPhotoURL: 'https://picsum.photos/100/100?random=me'
-          }
-        ],
-        virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing2'
-      },
-      {
-        id: 'pairing3',
-        date: twoDaysAgo as any,
-        expiresAt: new Date(twoDaysAgo.setHours(22, 0, 0, 0)) as any,
-        users: ['currentuser', 'user3'],
-        status: 'completed',
-        selfieURL: 'https://picsum.photos/600/800?random=3',
-        frontImage: 'https://picsum.photos/300/400?random=3a',
-        backImage: 'https://picsum.photos/300/400?random=3b',
-        completedAt: twoDaysAgo as any,
-        isPrivate: false,
-        likes: 4,
-        likedBy: ['user1', 'user2', 'user4'],
-        comments: [],
-        virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing3'
-      },
-      {
-        id: 'pairing4',
-        date: twoDaysAgo as any,
-        expiresAt: new Date(twoDaysAgo.setHours(22, 0, 0, 0)) as any,
-        users: ['user1', 'user4'],
-        status: 'flaked',
-        isPrivate: false,
-        likes: 0,
-        likedBy: [],
-        comments: [],
-        virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing4'
-      },
-      {
-        id: 'pairing5',
-        date: threeDaysAgo as any,
-        expiresAt: new Date(threeDaysAgo.setHours(22, 0, 0, 0)) as any,
-        users: ['user2', 'currentuser'],
-        status: 'completed',
-        selfieURL: 'https://picsum.photos/600/800?random=5',
-        frontImage: 'https://picsum.photos/300/400?random=5a',
-        backImage: 'https://picsum.photos/300/400?random=5b',
-        completedAt: threeDaysAgo as any,
-        isPrivate: true,
-        likes: 2,
-        likedBy: ['user3', 'user1'],
-        comments: [
-          {
-            id: 'comment4',
-            userId: 'user3',
-            text: 'Private pairing but great photo!',
-            createdAt: threeDaysAgo as any,
-            username: 'kelvin',
-            userPhotoURL: 'https://picsum.photos/100/100?random=3'
-          }
-        ],
-        virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing5'
-      }
-    ];
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    if (refresh) {
-      setUsers(mockUsers);
-      setPairings(mockPairings);
-    } else {
-      setUsers(prev => ({ ...prev, ...mockUsers }));
-      setPairings(prev => [...prev, ...mockPairings]);
-    }
-    
-    // Simulate pagination
-    setHasMore(false);
-  };
+  // No longer using mock data generation
   
   /**
    * Handle sharing a pairing
@@ -419,24 +223,64 @@ const FeedScreen: React.FC = () => {
    * Navigate to camera screen with today's pairing
    */
   const navigateToCamera = () => {
-    // @ts-ignore - Navigation typing
-    navigation.navigate('Camera');
+    navigation.navigate('Camera' as never);
   };
   
   /**
    * Navigate to profile screen
    */
   const navigateToProfile = () => {
-    // @ts-ignore - Navigation typing
-    navigation.navigate('Profile');
+    navigation.navigate('Profile' as never);
+  };
+  
+  /**
+   * Navigate to friends list screen
+   */
+  const navigateToFriendsList = () => {
+    navigation.navigate('FindFriends' as never);
   };
   
   /**
    * Render an individual pairing item
    */
   const renderPairingItem = useCallback(({ item, index }: { item: Pairing, index: number }) => {
-    const user1 = users[item.users[0]];
-    const user2 = users[item.users[1]];
+    // Get users from our cached users state
+    const user1 = item.user1_id ? users[item.user1_id] : undefined;
+    const user2 = item.user2_id ? users[item.user2_id] : undefined;
+    
+    // Skip rendering if we don't have the user data yet
+    if (!user1 || !user2) {
+      console.log(`Missing user data for pairing ${item.id}`);
+      return null;
+    }
+    
+    // Determine if current user has liked this pairing
+    const currentUserLiked = Array.isArray(item.likedBy) && item.likedBy.includes(user?.id || '');
+    
+    // Format the location (placeholder for now - could be enhanced with real location data)
+    const location = 'Stanford, CA';
+    
+    // Setup reaction handler
+    const handleReaction = (pairingId: string, reaction: string) => {
+      console.log(`Reaction ${reaction} on pairing ${pairingId}`);
+      // Implement real reaction handling with Firebase
+      // firebaseService.addReactionToPairing(pairingId, user?.id || '', reaction);
+    };
+    
+    // Setup options handler
+    const handleOptions = (pairingId: string) => {
+      console.log(`Options for pairing ${pairingId}`);
+      // Implement real options menu with Firebase actions
+    };
+    
+    // Format timestamp from Firestore Timestamp
+    const timestamp = item.completedAt && typeof item.completedAt.toDate === 'function' 
+      ? item.completedAt.toDate() 
+      : new Date();
+    
+    // Get the primary image URL to display
+    // With the single camera flow, we'll use the user1_photoURL (if available) as the primary image
+    const imageURL = item.user1_photoURL || item.user2_photoURL || defaultAvatar;
     
     return (
       <Animated.View style={{
@@ -448,15 +292,37 @@ const FeedScreen: React.FC = () => {
           })},
         ],
       }}>
-        <PairingCard
-          pairing={item}
-          user1={user1}
-          user2={user2}
-          onShare={handleSharePairing}
+        <PostCard
+          id={item.id}
+          users={[user1, user2] as [User, User]}
+          imageURL={imageURL}
+          location={location}
+          timestamp={timestamp}
+          lateBy={0} // Calculate late time if needed
+          onLike={() => handleToggleLike(item.id)}
+          onReact={handleReaction}
+          onOptions={handleOptions}
+          likesCount={item.likesCount || 0}
+          commentsCount={item.commentsCount || 0}
+          currentUserLiked={currentUserLiked}
         />
       </Animated.View>
     );
-  }, [users, fadeAnim]);
+  }, [users, fadeAnim, user?.id]);
+  
+  // Add function to toggle like using Firebase
+  const handleToggleLike = async (pairingId: string) => {
+    if (!user?.id) return;
+    
+    try {
+      await firebaseService.toggleLikePairing(pairingId, user.id);
+      // The feed will update automatically if we have real-time listeners
+      // Otherwise, we could manually update the UI by refreshing the feed or updating state
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      setError('Failed to like pairing');
+    }
+  };
   
   /**
    * Render the empty state when no pairings are available
@@ -464,6 +330,31 @@ const FeedScreen: React.FC = () => {
   const renderEmptyComponent = () => {
     if (loading) return null;
     
+    // Check for friend count - for demo purposes, use 0 to show the add friends view
+    const friendCount = 0; // In a real app, get this from the user's connections array
+    const minFriendsRequired = 5;
+    
+    if (friendCount < minFriendsRequired) {
+      // Not enough friends yet, show the add friends prompt
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="people-outline" size={64} color={COLORS.textSecondary} />
+          <Text style={styles.emptyTitle}>Add at least 5 friends to get started!</Text>
+          <Text style={styles.emptyText}>
+            Connect with your Stanford friends to start getting daily meetup suggestions.
+          </Text>
+          <TouchableOpacity 
+            style={styles.addFriendsButton}
+            onPress={navigateToFriendsList}
+          >
+            <Ionicons name="person-add" size={20} color="#FFFFFF" />
+            <Text style={styles.addFriendsButtonText}>Add friends</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    
+    // Has enough friends but no pairings yet
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="camera-outline" size={64} color={COLORS.textSecondary} />
@@ -500,18 +391,25 @@ const FeedScreen: React.FC = () => {
    */
   const renderHeader = () => {
     return (
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Daily Selfies</Text>
-        <TouchableOpacity 
-          style={styles.profileButton}
-          onPress={navigateToProfile}
-        >
-          <Image 
-            source={{ uri: user?.photoURL || 'https://picsum.photos/100/100?random=me' }} 
-            style={styles.profileImage} 
-          />
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.headerContainer}>
+        <View style={styles.header}>
+          {/* Left: Friend List Icon */}
+          <TouchableOpacity style={styles.headerButton} onPress={navigateToFriendsList}>
+            <Ionicons name="people-outline" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+
+          {/* Center: BNOC Logo */}
+          <Text style={styles.headerTitle}>BNOC</Text>
+
+          {/* Right: User Profile Image */}
+          <TouchableOpacity style={styles.headerButton} onPress={navigateToProfile}>
+            <Image
+              source={{ uri: user?.photoURL || defaultAvatar }}
+              style={styles.headerAvatar}
+            />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   };
   
@@ -523,9 +421,9 @@ const FeedScreen: React.FC = () => {
   
   return (
     <SafeAreaView style={globalStyles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <View style={styles.container}>
-        {/* Header */}
+        {/* Custom Header */}
         {renderHeader()}
         
         {/* Feed */}
@@ -581,7 +479,7 @@ const FeedScreen: React.FC = () => {
             onPress={navigateToCamera}
             activeOpacity={0.8}
           >
-            <Ionicons name="camera" size={24} color="#FFFFFF" />
+            <Ionicons name="camera" size={24} color="#000000" />
           </TouchableOpacity>
           
           {/* Current pairing indicator */}
@@ -601,32 +499,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  headerContainer: {
+    backgroundColor: COLORS.background,
+    width: '100%',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
   headerTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 24,
     color: COLORS.primary,
+    fontSize: 20,
+    fontFamily: 'ChivoBold',
+    letterSpacing: 1,
   },
-  profileButton: {
+  headerButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: COLORS.card,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profileImage: {
-    width: 40,
-    height: 40,
+  headerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   loadingContainer: {
     flex: 1,
@@ -675,6 +574,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   emptyCameraButtonText: {
+    fontFamily: 'ChivoBold',
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  addFriendsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  addFriendsButtonText: {
     fontFamily: 'ChivoBold',
     fontSize: 16,
     color: '#FFFFFF',

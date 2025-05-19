@@ -2,6 +2,7 @@
  * Global Styles
  * 
  * Shared styles for consistent look and feel across the app.
+ * Updated for black and white theme.
  */
 
 import { StyleSheet, Dimensions, Platform } from 'react-native';
@@ -13,11 +14,11 @@ export const globalStyles = StyleSheet.create({
   // Container styles
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background, // Black
   },
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background, // Black
   },
   contentContainer: {
     padding: 16,
@@ -26,7 +27,7 @@ export const globalStyles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background, // Black
   },
   scrollContainer: {
     flexGrow: 1,
@@ -34,7 +35,7 @@ export const globalStyles = StyleSheet.create({
   
   // Card styles
   card: {
-    backgroundColor: COLORS.card,
+    backgroundColor: COLORS.backgroundLight, // Dark gray
     borderRadius: BORDER_RADIUS.large,
     padding: 16,
     marginBottom: 16,
@@ -49,7 +50,7 @@ export const globalStyles = StyleSheet.create({
   cardTitle: {
     fontFamily: 'ChivoBold',
     fontSize: 18,
-    color: COLORS.text,
+    color: COLORS.text, // White
   },
   cardContent: {
     marginBottom: 12,
@@ -64,42 +65,42 @@ export const globalStyles = StyleSheet.create({
   title: {
     fontFamily: 'ChivoBold',
     fontSize: 24,
-    color: COLORS.text,
+    color: COLORS.text, // White
     marginBottom: 8,
   },
   subtitle: {
     fontFamily: 'ChivoBold',
     fontSize: 18,
-    color: COLORS.text,
+    color: COLORS.text, // White
     marginBottom: 8,
   },
   bodyText: {
     fontFamily: 'ChivoRegular',
     fontSize: 16,
-    color: COLORS.text,
+    color: COLORS.text, // White
     lineHeight: 24,
   },
   captionText: {
     fontFamily: 'ChivoRegular',
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: COLORS.textSecondary, // Light gray
   },
   errorText: {
     fontFamily: 'ChivoRegular',
     fontSize: 14,
-    color: COLORS.error,
+    color: COLORS.error, // White
     marginTop: 4,
   },
   linkText: {
     fontFamily: 'ChivoRegular',
     fontSize: 16,
-    color: COLORS.primary,
+    color: COLORS.primary, // White
     textDecorationLine: 'underline',
   },
   
   // Button styles
   primaryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.primary, // White
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: BORDER_RADIUS.medium,
@@ -110,7 +111,7 @@ export const globalStyles = StyleSheet.create({
   primaryButtonText: {
     fontFamily: 'ChivoBold',
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#000000', // Black text on white background
   },
   secondaryButton: {
     backgroundColor: 'transparent',
@@ -118,14 +119,14 @@ export const globalStyles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: BORDER_RADIUS.medium,
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: COLORS.primary, // White
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryButtonText: {
     fontFamily: 'ChivoBold',
     fontSize: 16,
-    color: COLORS.primary,
+    color: COLORS.primary, // White
   },
   textButton: {
     paddingVertical: 8,
@@ -134,7 +135,7 @@ export const globalStyles = StyleSheet.create({
   textButtonText: {
     fontFamily: 'ChivoRegular',
     fontSize: 16,
-    color: COLORS.primary,
+    color: COLORS.primary, // White
   },
   iconButton: {
     padding: 8,
@@ -143,26 +144,26 @@ export const globalStyles = StyleSheet.create({
   // Input styles
   input: {
     height: 48,
-    backgroundColor: COLORS.backgroundLight,
+    backgroundColor: COLORS.backgroundLight, // Dark gray
     borderRadius: BORDER_RADIUS.medium,
     paddingHorizontal: 16,
     fontFamily: 'ChivoRegular',
     fontSize: 16,
-    color: COLORS.text,
+    color: COLORS.text, // White
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.border, // Dark gray
   },
   inputLabel: {
     fontFamily: 'ChivoBold',
     fontSize: 14,
-    color: COLORS.text,
+    color: COLORS.text, // White
     marginBottom: 8,
   },
   inputContainer: {
     marginBottom: 16,
   },
   inputError: {
-    borderColor: COLORS.error,
+    borderColor: COLORS.error, // White
   },
   
   // Avatar styles
@@ -170,7 +171,7 @@ export const globalStyles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: COLORS.backgroundLight,
+    backgroundColor: COLORS.backgroundLight, // Dark gray
   },
   avatarLarge: {
     width: 80,
@@ -183,19 +184,19 @@ export const globalStyles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background, // Black
   },
   loadingText: {
     fontFamily: 'ChivoRegular',
     fontSize: 16,
-    color: COLORS.textSecondary,
+    color: COLORS.textSecondary, // Light gray
     marginTop: 12,
   },
   
   // Divider
   divider: {
     height: 1,
-    backgroundColor: COLORS.border,
+    backgroundColor: COLORS.border, // Dark gray
     marginVertical: 16,
   },
   
@@ -205,12 +206,12 @@ export const globalStyles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: COLORS.border, // Dark gray
   },
   listItemText: {
     fontFamily: 'ChivoRegular',
     fontSize: 16,
-    color: COLORS.text,
+    color: COLORS.text, // White
     flex: 1,
   },
   
@@ -221,19 +222,18 @@ export const globalStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.background, // Black
   },
   headerTitle: {
     fontFamily: 'ChivoBold',
     fontSize: 18,
-    color: COLORS.text,
+    color: COLORS.text, // White
   },
   
   // Tab styles
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: COLORS.card,
+    backgroundColor: COLORS.backgroundLight, // Dark gray
     borderRadius: BORDER_RADIUS.large,
     padding: 4,
     marginBottom: 16,
@@ -245,20 +245,18 @@ export const globalStyles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.medium,
   },
   activeTab: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.primary, // White
   },
   inactiveTab: {
     backgroundColor: 'transparent',
   },
-  tabText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 14,
-  },
   activeTabText: {
-    color: '#FFFFFF',
+    color: '#000000', // Black text on white background
+    fontFamily: 'ChivoBold',
   },
   inactiveTabText: {
-    color: COLORS.text,
+    color: COLORS.textSecondary, // Light gray
+    fontFamily: 'ChivoRegular',
   },
   
   // Badge styles

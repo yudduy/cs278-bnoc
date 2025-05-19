@@ -2,7 +2,7 @@
  * PairingCard Component
  * 
  * Enhanced card component for displaying a pairing in the feed.
- * Includes social features like likes and comments.
+ * Updated for black and white BeReal-inspired UI.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -23,9 +23,6 @@ import { User, Pairing } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import LikeButton from './social/LikeButton';
 import CommentList from './social/CommentList';
-
-// Default avatar placeholder
-const defaultAvatar = 'https://via.placeholder.com/100';
 
 interface PairingCardProps {
   pairing: Pairing;
@@ -99,38 +96,72 @@ const PairingCard: React.FC<PairingCardProps> = ({
     openPairingDetail();
   };
   
+  // Format time ago
+  const getTimeAgo = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.round(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min${diffMins === 1 ? '' : 's'} ago`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? '' : 's'} ago`;
+    
+    return formattedDate;
+  };
+  
   return (
     <View style={styles.card}>
       {/* Header with user avatars and names */}
       <View style={styles.cardHeader}>
         <View style={styles.userInfo}>
-          {/* User 1 */}
-          <TouchableOpacity onPress={() => user1 && navigateToProfile(user1.id)}>
+          {/* User Avatars */}
+          <View style={styles.avatarsContainer}>
             {user1?.photoURL ? (
               <Image source={{ uri: user1.photoURL }} style={styles.avatar} />
             ) : (
               <View style={[styles.avatar, styles.placeholderAvatar]}>
                 <Text style={styles.placeholderText}>
-                  {user1?.displayName?.charAt(0).toUpperCase() || '?'}
+                  {user1?.username?.charAt(0).toUpperCase() || '?'}
                 </Text>
               </View>
             )}
-          </TouchableOpacity>
-          
-          <View style={styles.usernamesContainer}>
-            <TouchableOpacity onPress={() => user1 && navigateToProfile(user1.id)}>
-              <Text style={styles.username}>{user1?.displayName || user1?.username || 'User'}</Text>
-            </TouchableOpacity>
             
-            <Text style={styles.andText}>and</Text>
-            
-            <TouchableOpacity onPress={() => user2 && navigateToProfile(user2.id)}>
-              <Text style={styles.username}>{user2?.displayName || user2?.username || 'Partner'}</Text>
-            </TouchableOpacity>
+            {user2?.photoURL ? (
+              <Image source={{ uri: user2.photoURL }} style={[styles.avatar, styles.secondAvatar]} />
+            ) : (
+              <View style={[styles.avatar, styles.placeholderAvatar, styles.secondAvatar]}>
+                <Text style={styles.placeholderText}>
+                  {user2?.username?.charAt(0).toUpperCase() || '?'}
+                </Text>
+              </View>
+            )}
           </View>
+          
+          {/* Username Format */}
+          <Text style={styles.usernameText}>
+            {user1?.username || 'User'} <Text style={styles.separator}>&lt;&gt;</Text> {user2?.username || 'Partner'}
+          </Text>
         </View>
         
-        <Text style={styles.date}>{formattedDate}</Text>
+        <View style={styles.metadataContainer}>
+          {pairing.location && (
+            <Text style={styles.locationText}>{pairing.location}</Text>
+          )}
+          <Text style={styles.timeText}>
+            {getTimeAgo(pairing.date ? new Date(pairing.date) : new Date())}
+            {pairing.status === 'late' && ' • Completed late'}
+          </Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={styles.optionsButton}
+          onPress={() => console.log('Options menu')}
+          disabled={previewMode}
+        >
+          <Ionicons name="ellipsis-vertical" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
       </View>
       
       {/* Selfie image */}
@@ -164,7 +195,7 @@ const PairingCard: React.FC<PairingCardProps> = ({
         </Animated.View>
       </TouchableOpacity>
       
-      {/* Footer with likes, comments, date */}
+      {/* Footer with likes, comments, share */}
       <View style={styles.cardFooter}>
         <View style={styles.interactionContainer}>
           {/* Like button */}
@@ -183,7 +214,7 @@ const PairingCard: React.FC<PairingCardProps> = ({
             <Ionicons 
               name="chatbubble-outline" 
               size={22} 
-              color={COLORS.textSecondary} 
+              color={COLORS.primary} 
             />
             <Text style={styles.interactionText}>
               {pairing.comments?.length || 0}
@@ -199,7 +230,7 @@ const PairingCard: React.FC<PairingCardProps> = ({
             <Ionicons 
               name="share-outline" 
               size={22} 
-              color={COLORS.textSecondary} 
+              color={COLORS.primary} 
             />
           </TouchableOpacity>
         </View>
@@ -228,17 +259,12 @@ const PairingCard: React.FC<PairingCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
+    backgroundColor: COLORS.background,
+    borderRadius: 0,
     overflow: 'hidden',
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -252,57 +278,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  avatarsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: COLORS.backgroundLight,
   },
+  secondAvatar: {
+    marginLeft: -8,
+    borderWidth: 1,
+    borderColor: COLORS.background,
+  },
   placeholderAvatar: {
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    backgroundColor: COLORS.secondary,
   },
   placeholderText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  usernamesContainer: {
-    marginLeft: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    flex: 1,
-  },
-  username: {
-    fontFamily: 'ChivoBold',
+    color: COLORS.primary,
     fontSize: 14,
-    color: COLORS.text,
+    fontWeight: 'bold',
   },
-  andText: {
-    fontFamily: 'ChivoRegular',
+  usernameText: {
+    color: COLORS.primary,
     fontSize: 14,
+    fontFamily: 'ChivoBold',
+  },
+  separator: {
     color: COLORS.textSecondary,
-    marginHorizontal: 4,
   },
-  date: {
-    fontFamily: 'ChivoRegular',
+  metadataContainer: {
+    alignItems: 'flex-end',
+    marginRight: 8,
+  },
+  locationText: {
+    color: COLORS.textSecondary,
     fontSize: 12,
+    fontFamily: 'ChivoRegular',
+  },
+  timeText: {
     color: COLORS.textSecondary,
+    fontSize: 12,
+    fontFamily: 'ChivoRegular',
+  },
+  optionsButton: {
+    padding: 8,
   },
   imageContainer: {
     width: '100%',
-    aspectRatio: 4/5,
   },
   imageWrapper: {
     width: '100%',
-    height: '100%',
+    aspectRatio: 1,
+    backgroundColor: COLORS.backgroundLight,
   },
   selfieImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: COLORS.backgroundLight,
   },
   noImageContainer: {
     width: '100%',
@@ -312,31 +349,29 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.backgroundLight,
   },
   noImageText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
     color: COLORS.textSecondary,
-    marginTop: 12,
+    marginTop: 8,
+    fontSize: 14,
   },
   flakeBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 16,
+    right: 16,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingVertical: 6,
     paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 16,
   },
   flakeText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 14,
-    color: '#FFFFFF',
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
     paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   interactionContainer: {
     flexDirection: 'row',
@@ -345,30 +380,26 @@ const styles = StyleSheet.create({
   interactionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 20,
-    padding: 6,
+    marginRight: 16,
   },
   interactionText: {
-    fontFamily: 'ChivoRegular',
+    color: COLORS.primary,
+    marginLeft: 4,
     fontSize: 14,
-    color: COLORS.textSecondary,
-    marginLeft: 6,
   },
   privateIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   privateText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 12,
     color: COLORS.textSecondary,
     marginLeft: 4,
+    fontSize: 12,
   },
   commentsContainer: {
+    padding: 16,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
 });
 

@@ -2,30 +2,14 @@
  * PairingContext
  * 
  * Provides context for managing pairings throughout the app.
- * Modified for demo bypass.
+ * Implements real Firebase service calls for pairing operations.
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Alert } from 'react-native';
 import firebaseService from '../services/firebase';
 import { useAuth } from './AuthContext';
-import { Pairing, Comment } from '../types';
-
-// Create mock pairing for immediate demo
-const now = new Date();
-const MOCK_CURRENT_PAIRING: Pairing = {
-  id: 'pairing1',
-  date: now as any,
-  expiresAt: new Date(now.setHours(22, 0, 0, 0)) as any,
-  users: ['currentuser', 'user2'],
-  status: 'pending',
-  selfieURL: '',
-  isPrivate: false,
-  likes: 0,
-  likedBy: [],
-  comments: [],
-  virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing1'
-};
+import { Pairing, SubmitPhotoParams, Comment } from '../types';
 
 // Context type definition
 interface PairingContextType {
@@ -41,11 +25,7 @@ interface PairingContextType {
   // Actions
   loadCurrentPairing: () => Promise<void>;
   loadPairingHistory: () => Promise<void>;
-  completePairing: (data: { 
-    frontImage: string; 
-    backImage: string; 
-    isPrivate: boolean;
-  }) => Promise<void>;
+  submitPhoto: (params: SubmitPhotoParams) => Promise<void>;
   toggleLikePairing: (pairingId: string) => Promise<void>;
   addCommentToPairing: (pairingId: string, commentText: string) => Promise<void>;
   sendReminder: (pairingId: string, partnerId: string) => Promise<void>;
@@ -62,8 +42,8 @@ interface PairingProviderProps {
 
 // Provider component
 export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) => {
-  // State - pre-populated for demo
-  const [currentPairing, setCurrentPairing] = useState<Pairing | null>(MOCK_CURRENT_PAIRING);
+  // State for pairing management
+  const [currentPairing, setCurrentPairing] = useState<Pairing | null>(null);
   const [pairingStatus, setPairingStatus] = useState<'idle' | 'loading' | 'uploading' | 'completed' | 'error'>('idle');
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [pairingHistory, setPairingHistory] = useState<Pairing[]>([]);
@@ -72,10 +52,14 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   // Get auth context
   const { user } = useAuth();
   
-  // Load pairing history when component mounts - for demo
+  // Load current pairing and history when component mounts or user changes
   useEffect(() => {
     if (user?.id) {
+      loadCurrentPairing();
       loadPairingHistory();
+    } else {
+      setCurrentPairing(null);
+      setPairingHistory([]);
     }
   }, [user?.id]);
   
@@ -92,9 +76,16 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       setPairingStatus('loading');
       setPairingError(null);
       
-      // For demo, use the mock pairing
-      setCurrentPairing(MOCK_CURRENT_PAIRING);
-      setPairingStatus('idle');
+      // Fetch the current pairing from Firebase
+      const pairing = await firebaseService.getCurrentPairing(user.id);
+      setCurrentPairing(pairing);
+      
+      // Update status based on pairing state
+      if (pairing?.status === 'completed') {
+        setPairingStatus('completed');
+      } else {
+        setPairingStatus('idle');
+      }
     } catch (error) {
       console.error('Error loading current pairing:', error);
       setPairingError('Failed to load today\'s pairing');
@@ -124,13 +115,9 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   };
   
   /**
-   * Complete a pairing by uploading selfie images
+   * Submit a photo for a pairing
    */
-  const completePairing = async (data: { 
-    frontImage: string; 
-    backImage: string; 
-    isPrivate: boolean;
-  }): Promise<void> => {
+  const submitPhoto = async (params: SubmitPhotoParams): Promise<void> => {
     if (!user?.id || !currentPairing) {
       setPairingError('No active pairing found');
       return;
@@ -140,24 +127,31 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       setPairingStatus('uploading');
       setPairingError(null);
       
-      // For demo, just update local state
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate upload delay
+      console.log('Submitting photo for pairing:', currentPairing.id);
       
-      // Update the current pairing
-      setCurrentPairing(prev => prev ? {
-        ...prev,
-        status: 'completed',
-        frontImage: data.frontImage,
-        backImage: data.backImage,
-        selfieURL: data.frontImage, // This will be replaced by the stitched image URL in production
-        isPrivate: data.isPrivate,
-        completedAt: new Date() as any
-      } : null);
+      // Upload the photo using Firebase service
+      await firebaseService.submitPairingPhoto(
+        currentPairing.id,
+        user.id,
+        params.photoURL,
+        params.isPrivate || false
+      );
       
-      setPairingStatus('completed');
+      console.log('Photo submitted successfully');
+      
+      // Refresh the current pairing to get updated status
+      await loadCurrentPairing();
+      
+      // Update status based on new pairing state
+      const refreshedPairing = await firebaseService.getPairingById(currentPairing.id);
+      if (refreshedPairing?.status === 'completed') {
+        setPairingStatus('completed');
+      } else {
+        setPairingStatus('idle');
+      }
     } catch (error) {
-      console.error('Error completing pairing:', error);
-      setPairingError('Failed to upload selfie');
+      console.error('Error submitting photo:', error);
+      setPairingError('Failed to upload photo: ' + (error instanceof Error ? error.message : String(error)));
       setPairingStatus('error');
     }
   };
@@ -171,43 +165,16 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     }
     
     try {
-      // For demo, just update local state
+      // Use Firebase service to toggle like
+      await firebaseService.toggleLikePairing(pairingId, user.id);
       
-      // Update current pairing if it matches
+      // Refresh current pairing if it matches the toggled one
       if (currentPairing?.id === pairingId) {
-        setCurrentPairing(prev => {
-          if (!prev) return null;
-          
-          const userLiked = prev.likedBy?.includes(user.id);
-          const newLikedBy = userLiked 
-            ? prev.likedBy.filter(id => id !== user.id)
-            : [...(prev.likedBy || []), user.id];
-          
-          return {
-            ...prev,
-            likes: userLiked ? Math.max(0, prev.likes - 1) : prev.likes + 1,
-            likedBy: newLikedBy
-          };
-        });
+        await loadCurrentPairing();
       }
       
-      // Update history state if the pairing is in history
-      setPairingHistory(prev => {
-        return prev.map(p => {
-          if (p.id !== pairingId) return p;
-          
-          const userLiked = p.likedBy?.includes(user.id);
-          const newLikedBy = userLiked 
-            ? p.likedBy.filter(id => id !== user.id)
-            : [...(p.likedBy || []), user.id];
-          
-          return {
-            ...p,
-            likes: userLiked ? Math.max(0, p.likes - 1) : p.likes + 1,
-            likedBy: newLikedBy
-          };
-        });
-      });
+      // Refresh pairing history to reflect the change
+      await loadPairingHistory();
     } catch (error) {
       console.error('Error toggling like:', error);
       Alert.alert('Error', 'Failed to like pairing');
@@ -223,39 +190,19 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     }
     
     try {
-      // Create a comment object for demo
-      const newComment: Comment = {
-        id: Math.random().toString(),
-        userId: user.id,
-        text: commentText.trim(),
-        createdAt: new Date() as any,
-        username: user.username,
-        userPhotoURL: user.photoURL || 'https://picsum.photos/100/100?random=me'
-      };
+      // Use Firebase service to add the comment
+      await firebaseService.addCommentToPairing(pairingId, user.id, commentText.trim());
       
-      // Update local state if it's the current pairing
+      // Refresh data to reflect changes
       if (currentPairing?.id === pairingId) {
-        setCurrentPairing(prev => {
-          if (!prev) return null;
-          
-          return {
-            ...prev,
-            comments: [...(prev.comments || []), newComment]
-          };
-        });
+        await loadCurrentPairing();
       }
       
-      // Update history state if the pairing is in history
-      setPairingHistory(prev => {
-        return prev.map(p => {
-          if (p.id !== pairingId) return p;
-          
-          return {
-            ...p,
-            comments: [...(p.comments || []), newComment]
-          };
-        });
-      });
+      // Refresh pairing history if needed
+      const matchingHistoryItem = pairingHistory.find(p => p.id === pairingId);
+      if (matchingHistoryItem) {
+        await loadPairingHistory();
+      }
     } catch (error) {
       console.error('Error adding comment:', error);
       Alert.alert('Error', 'Failed to add comment');
@@ -266,8 +213,13 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
    * Send a reminder to a partner
    */
   const sendReminder = async (pairingId: string, partnerId: string): Promise<void> => {
+    if (!user?.id) {
+      return;
+    }
+    
     try {
-      // For demo, just show a success message
+      // Use Firebase service to send the reminder
+      await firebaseService.sendPairingReminder(pairingId, user.id, partnerId);
       Alert.alert('Success', 'Reminder sent to your partner');
     } catch (error) {
       console.error('Error sending reminder:', error);
@@ -292,7 +244,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     historyLoading,
     loadCurrentPairing,
     loadPairingHistory,
-    completePairing,
+    submitPhoto,
     toggleLikePairing,
     addCommentToPairing,
     sendReminder,

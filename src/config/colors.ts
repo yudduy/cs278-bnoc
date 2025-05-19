@@ -2,45 +2,55 @@
  * App Colors
  * 
  * Centralized color definitions for the Daily Meetup Selfie app.
- * This ensures consistent styling across the entire application.
+ * Black and white theme for the BeReal-inspired UI.
  */
 
 export const COLORS = {
-  // Primary brand color
-  primary: '#990000', // Stanford Cardinal
-  primaryLight: '#C41E3A',
-  primaryDark: '#8C1515',
+  // Brand colors
+  primary: '#FFFFFF', // White as primary color
+  primaryLight: '#F5F5F5',
+  primaryDark: '#E0E0E0',
   
-  // Background colors
-  background: '#FFFFFF',
-  backgroundLight: '#F5F5F5',
-  backgroundDark: '#E5E5E5',
+  // Secondary color 
+  secondary: '#333333', // Dark gray as secondary
+  secondaryLight: '#555555',
+  secondaryDark: '#111111',
   
-  // Card and container colors
-  card: '#FFFFFF',
+  // Functional colors
+  success: '#FFFFFF', // Using white for most elements
+  warning: '#FFFFFF',
+  error: '#FFFFFF',
+  info: '#FFFFFF',
+  
+  // UI colors
+  background: '#000000', // Black background
+  backgroundDark: '#000000',
+  backgroundLight: '#111111',
+  
+  card: '#111111', // Dark cards
+  cardDark: '#000000',
+  
+  border: '#333333',
+  borderDark: '#444444',
   
   // Text colors
-  text: '#333333',
-  textSecondary: '#757575',
-  textLight: '#ABABAB',
+  text: '#FFFFFF', // White text
+  textSecondary: '#AAAAAA', // Light gray for secondary text
+  textLight: '#666666',
+  textOnPrimary: '#000000', // Black text on white backgrounds
+  textOnSecondary: '#FFFFFF',
+  
+  // Skeleton loading colors
+  skeletonBase: '#333333',
+  skeletonHighlight: '#444444',
   
   // Accent colors
-  accent: '#4A90E2',
-  
-  // Status colors
-  success: '#2ECC71',
-  error: '#E74C3C',
-  warning: '#F39C12',
-  info: '#3498DB',
-  
-  // Border colors
-  border: '#E0E0E0',
-  borderDark: '#CCCCCC',
+  accent: '#FFFFFF',
   
   // Other UI colors
-  disabled: '#D1D1D1',
-  overlay: 'rgba(0, 0, 0, 0.6)',
-  highlight: '#FFF9C4'
+  disabled: '#444444',
+  overlay: 'rgba(0, 0, 0, 0.8)',
+  highlight: '#222222'
 };
 
 // Font families (when loaded through expo-font)

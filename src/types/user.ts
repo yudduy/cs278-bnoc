@@ -4,24 +4,26 @@
  * Type definitions for user-related data.
  */
 
-import { Timestamp, NotificationSettings } from './index';
+import { Timestamp } from 'firebase/firestore';
+import { NotificationSettings } from './notification';
 
+// Represents the structure of a user in the application
 export interface User {
-  id: string;
-  email: string;
-  username: string;
-  displayName?: string;
-  photoURL?: string;
+  id: string; // UID from Firebase Auth
+  email: string; // Stanford email, verified
+  displayName?: string; // Optional
+  username: string; // Unique, chosen by user
+  photoURL?: string; // URL to profile picture
   createdAt: Timestamp;
   lastActive: Timestamp;
-  isActive: boolean;
-  flakeStreak: number;
-  maxFlakeStreak: number;
-  blockedIds: string[];
-  pushToken?: string;
+  isActive: boolean; // Used for pairing eligibility
+  flakeStreak: number; // Current consecutive flakes
+  maxFlakeStreak: number; // All-time max flake streak
+  connections: string[]; // Array of friend UIDs
+  blockedIds?: string[]; // Array of UIDs of users blocked by this user
   notificationSettings: NotificationSettings;
-  snoozeTokensRemaining: number;
-  snoozeTokenLastRefilled: Timestamp;
+  fcmToken?: string; // For push notifications
+  pushToken?: string;
   waitlistedToday?: boolean;
   priorityNextPairing?: boolean;
 }

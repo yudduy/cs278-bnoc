@@ -25,27 +25,27 @@ import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { getTimeRemainingUntilDeadline } from '../../utils/notifications/notificationUtils';
-import { useNotifications } from '../../context/NotificationContext';
-
-// Default avatar placeholder
-const defaultAvatar = 'https://via.placeholder.com/100';
+import { useNotification } from '../../context/NotificationContext';
+import { RouteProp } from '@react-navigation/native';
+import { CameraStackParamList } from '../../types/navigation';
 
 const WaitingScreen: React.FC = () => {
   // Navigation and route
   const navigation = useNavigation();
-  const route = useRoute();
+  const route = useRoute<RouteProp<CameraStackParamList, 'WaitingScreen'>>();
   const pairingId = route.params?.pairingId;
   
   // Contexts
   const { user } = useAuth();
   const { currentPairing, sendReminder } = usePairing();
-  const { sendLocalNotification } = useNotifications();
+  const { sendLocalNotification } = useNotification();
   
   // State
   const [reminding, setReminding] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(getTimeRemainingUntilDeadline());
   const [lastReminderSent, setLastReminderSent] = useState<number | null>(null);
   const [partner, setPartner] = useState<any | null>(null);
+  const [timeToNextPairing, setTimeToNextPairing] = useState<string>('');
   
   // Animations
   const pulseAnimation = new Animated.Value(1);
@@ -98,7 +98,7 @@ const WaitingScreen: React.FC = () => {
         setPartner({
           id: partnerId,
           displayName: 'Partner Name',
-          photoURL: defaultAvatar,
+          photoURL: null,
           username: 'partner',
         });
       } catch (error) {
@@ -108,6 +108,26 @@ const WaitingScreen: React.FC = () => {
     
     loadPartnerData();
   }, [partnerId]);
+  
+  // Calculate time to next pairing (midnight)
+  useEffect(() => {
+    const calculateTimeToNextPairing = () => {
+      const now = new Date();
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      
+      const diffMs = tomorrow.getTime() - now.getTime();
+      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      setTimeToNextPairing(`${diffHrs}h ${diffMins}m`);
+    };
+    
+    calculateTimeToNextPairing();
+    const interval = setInterval(calculateTimeToNextPairing, 60000);
+    return () => clearInterval(interval);
+  }, []);
   
   // Handle send reminder
   const handleSendReminder = async () => {
@@ -174,6 +194,43 @@ const WaitingScreen: React.FC = () => {
     );
   };
   
+  // Render no pairing available state
+  const renderNoPairingState = () => {
+    return (
+      <View style={styles.noPairingContainer}>
+        <Animated.View 
+          style={[
+            styles.waitingIcon,
+            {
+              transform: [{ scale: pulseAnimation }]
+            }
+          ]}
+        >
+          <Ionicons name="time-outline" size={64} color={COLORS.primary} />
+        </Animated.View>
+        
+        <Text style={styles.noPairingTitle}>
+          No Pairing Yet
+        </Text>
+        
+        <Text style={styles.noPairingText}>
+          You don't have a pairing for today yet. The next pairing will be assigned in:
+        </Text>
+        
+        <View style={styles.countdownContainer}>
+          <Text style={styles.countdownText}>{timeToNextPairing}</Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={handleBack}
+        >
+          <Text style={styles.refreshButtonText}>Check Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+  
   return (
     <SafeAreaView style={globalStyles.container}>
       <View style={styles.container}>
@@ -187,75 +244,77 @@ const WaitingScreen: React.FC = () => {
         </View>
         
         {/* Content */}
-        <View style={styles.content}>
-          <View style={styles.card}>
-            <Text style={styles.title}>
-              Waiting for {partner?.displayName || 'partner'}
-            </Text>
-            
-            <View style={styles.avatarContainer}>
-              {partner?.photoURL ? (
-                <Image 
-                  source={{ uri: partner.photoURL }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <View style={[styles.avatar, styles.placeholderAvatar]}>
-                  <Text style={styles.placeholderText}>
-                    {partner?.displayName?.charAt(0) || '?'}
-                  </Text>
-                </View>
-              )}
+        {!currentPairing ? renderNoPairingState() : (
+          <View style={styles.content}>
+            <View style={styles.card}>
+              <Text style={styles.title}>
+                Waiting for {partner?.displayName || 'partner'}
+              </Text>
               
-              <Animated.View 
-                style={[
-                  styles.pulsingDot,
-                  {
-                    transform: [{ scale: pulseAnimation }]
-                  }
-                ]}
-              />
+              <View style={styles.avatarContainer}>
+                {partner?.photoURL ? (
+                  <Image 
+                    source={{ uri: partner.photoURL }}
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <View style={[styles.avatar, styles.placeholderAvatar]}>
+                    <Text style={styles.placeholderText}>
+                      {partner?.displayName?.charAt(0) || '?'}
+                    </Text>
+                  </View>
+                )}
+                
+                <Animated.View 
+                  style={[
+                    styles.pulsingDot,
+                    {
+                      transform: [{ scale: pulseAnimation }]
+                    }
+                  ]}
+                />
+              </View>
+              
+              <Text style={styles.timeRemaining}>
+                {timeRemaining.formatted}
+              </Text>
+              
+              <Text style={styles.waitingText}>
+                Your partner hasn't posted their selfie yet. Send them a reminder or try again later.
+              </Text>
+              
+              <TouchableOpacity 
+                style={styles.reminderButton}
+                onPress={handleSendReminder}
+                disabled={reminding}
+              >
+                {reminding ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.reminderButtonText}>Send Reminder</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.virtualMeetingButton}
+                onPress={handleStartVirtualMeeting}
+              >
+                <Ionicons name="videocam-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.virtualMeetingText}>Start Virtual Meeting</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={handleBack}
+              >
+                <Text style={styles.backButtonText}>Back to Feed</Text>
+              </TouchableOpacity>
             </View>
-            
-            <Text style={styles.timeRemaining}>
-              {timeRemaining.formatted}
-            </Text>
-            
-            <Text style={styles.waitingText}>
-              Your partner hasn't posted their selfie yet. Send them a reminder or try again later.
-            </Text>
-            
-            <TouchableOpacity 
-              style={styles.reminderButton}
-              onPress={handleSendReminder}
-              disabled={reminding}
-            >
-              {reminding ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.reminderButtonText}>Send Reminder</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.virtualMeetingButton}
-              onPress={handleStartVirtualMeeting}
-            >
-              <Ionicons name="videocam-outline" size={20} color={COLORS.primary} />
-              <Text style={styles.virtualMeetingText}>Start Virtual Meeting</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={handleBack}
-            >
-              <Text style={styles.backButtonText}>Back to Feed</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -398,6 +457,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textSecondary,
     textDecorationLine: 'underline',
+  },
+  noPairingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  waitingIcon: {
+    marginBottom: 24,
+  },
+  noPairingTitle: {
+    fontFamily: 'ChivoBold',
+    fontSize: 24,
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  noPairingText: {
+    fontFamily: 'ChivoRegular',
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  countdownContainer: {
+    backgroundColor: COLORS.card,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    marginBottom: 32,
+  },
+  countdownText: {
+    fontFamily: 'ChivoBold',
+    fontSize: 32,
+    color: COLORS.primary,
+  },
+  refreshButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    fontFamily: 'ChivoBold',
+    fontSize: 16,
+    color: COLORS.background,
   },
 });
 

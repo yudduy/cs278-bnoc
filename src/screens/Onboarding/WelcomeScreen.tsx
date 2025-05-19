@@ -1,21 +1,21 @@
 /**
  * WelcomeScreen
  * 
- * Initial onboarding screen for new users.
+ * Initial onboarding screen for new users with black and white theme.
  */
 
 import React from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
-  Image,
   SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { COLORS } from '../../config/colors';
-import { globalStyles } from '../../styles/globalStyles';
+import { COLORS } from '../../config/theme';
+import { onboardingStyles } from './OnboardingStyles';
+import { Ionicons } from '@expo/vector-icons';
 
 const WelcomeScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -26,136 +26,80 @@ const WelcomeScreen: React.FC = () => {
   };
   
   return (
-    <SafeAreaView style={globalStyles.container}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome to Daily Meetup</Text>
-          <Text style={styles.subtitle}>Connect with your peers every day</Text>
+    <SafeAreaView style={onboardingStyles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <View style={onboardingStyles.container}>
+        {/* Logo */}
+        <View style={onboardingStyles.logoContainer}>
+          <Text style={onboardingStyles.logoText}>BNOC</Text>
         </View>
         
-        <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: 'https://picsum.photos/500/500?random=welcome' }}
-            style={styles.image}
-            resizeMode="cover"
-          />
-        </View>
-        
-        <View style={styles.content}>
-          <Text style={styles.description}>
-            Daily Meetup pairs you with someone new every day for a quick selfie moment.
-            Build your network, one meetup at a time.
+        <View style={onboardingStyles.contentContainer}>
+          {/* Welcome message */}
+          <Text style={onboardingStyles.title}>Meet someone new on campus, daily.</Text>
+          <Text style={onboardingStyles.description}>
+            BNOC pairs you with a new Stanford student each day for a quick selfie moment.
+            Build your network, make friends, and never miss a connection.
           </Text>
           
-          <View style={styles.features}>
-            <View style={styles.featureItem}>
-              <Text style={styles.featureTitle}>Daily Pairings</Text>
-              <Text style={styles.featureDescription}>
-                Get paired with someone new every day
-              </Text>
+          {/* Features with minimal icons */}
+          <View style={{ marginTop: 24 }}>
+            <View style={onboardingStyles.featureItem}>
+              <View style={onboardingStyles.featureIcon}>
+                <Ionicons name="people-outline" size={24} color={COLORS.primary} />
+              </View>
+              <View style={onboardingStyles.featureText}>
+                <Text style={onboardingStyles.featureTitle}>Daily Connections</Text>
+                <Text style={onboardingStyles.featureDescription}>
+                  Get paired with someone new every day
+                </Text>
+              </View>
             </View>
             
-            <View style={styles.featureItem}>
-              <Text style={styles.featureTitle}>Selfie Moments</Text>
-              <Text style={styles.featureDescription}>
-                Capture a selfie together to complete the pairing
-              </Text>
+            <View style={onboardingStyles.featureItem}>
+              <View style={onboardingStyles.featureIcon}>
+                <Ionicons name="camera-outline" size={24} color={COLORS.primary} />
+              </View>
+              <View style={onboardingStyles.featureText}>
+                <Text style={onboardingStyles.featureTitle}>Capture Moments</Text>
+                <Text style={onboardingStyles.featureDescription}>
+                  Take selfies to commemorate each new connection
+                </Text>
+              </View>
             </View>
             
-            <View style={styles.featureItem}>
-              <Text style={styles.featureTitle}>Expand Your Network</Text>
-              <Text style={styles.featureDescription}>
-                Meet new people and build connections
-              </Text>
+            <View style={onboardingStyles.featureItem}>
+              <View style={onboardingStyles.featureIcon}>
+                <Ionicons name="school-outline" size={24} color={COLORS.primary} />
+              </View>
+              <View style={onboardingStyles.featureText}>
+                <Text style={onboardingStyles.featureTitle}>Stanford Community</Text>
+                <Text style={onboardingStyles.featureDescription}>
+                  Exclusive to Stanford students, verified with your .edu email
+                </Text>
+              </View>
             </View>
           </View>
         </View>
         
+        {/* Progress indicator */}
+        <View style={onboardingStyles.progressContainer}>
+          <View style={[onboardingStyles.progressDot, onboardingStyles.progressDotActive]} />
+          <View style={onboardingStyles.progressDot} />
+          <View style={onboardingStyles.progressDot} />
+          <View style={onboardingStyles.progressDot} />
+        </View>
+        
+        {/* Get Started Button */}
         <TouchableOpacity
-          style={styles.nextButton}
+          style={onboardingStyles.primaryButton}
           onPress={handleNext}
         >
-          <Text style={styles.nextButtonText}>Get Started</Text>
+          <Text style={onboardingStyles.primaryButtonText}>Get Started</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingHorizontal: 24,
-    justifyContent: 'space-between',
-    paddingBottom: 40,
-  },
-  header: {
-    marginTop: 40,
-    alignItems: 'center',
-  },
-  title: {
-    fontFamily: 'ChivoBold',
-    fontSize: 28,
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 18,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-  },
-  imageContainer: {
-    alignItems: 'center',
-    marginTop: 40,
-  },
-  image: {
-    width: 250,
-    height: 250,
-    borderRadius: 20,
-  },
-  content: {
-    marginTop: 40,
-  },
-  description: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.text,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
-  },
-  features: {
-    marginBottom: 32,
-  },
-  featureItem: {
-    marginBottom: 20,
-  },
-  featureTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    lineHeight: 22,
-  },
-  nextButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  nextButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: '#FFFFFF',
-  },
-});
 
 export default WelcomeScreen;

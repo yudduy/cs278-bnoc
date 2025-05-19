@@ -1,438 +1,220 @@
+import React, { useState, useEffect } from 'react';
 import {
-  CameraMode,
-  CameraType,
-  CameraView,
-  useCameraPermissions,
-} from "expo-camera";
-import { useRef, useState, useEffect } from "react";
-import {
-  Button,
-  Pressable,
   StyleSheet,
   Text,
   View,
   Alert,
-  Animated, // Import Animated
-  // Dimensions // Import Dimensions if needed for layout calculations
-} from "react-native";
-import { Image } from "expo-image";
-import AntDesign from "@expo/vector-icons/AntDesign";
-import Feather from "@expo/vector-icons/Feather";
-import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
-import * as MediaLibrary from "expo-media-library";
+  ActivityIndicator,
+  TouchableOpacity,
+  SafeAreaView,
+} from 'react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { useAuth } from '../../context/AuthContext';
+import firebaseService from '../../services/firebase';
+import { COLORS } from '../../config/colors';
+import { globalStyles } from '../../styles/globalStyles';
+import CameraCapture from '../../components/camera/Camera';
+import CameraPreview from '../../components/camera/CameraPreview';
+import { uploadImage } from '../../services/storageService';
+import { CaptureResult } from '../../hooks/useCamera';
 
-export default function App() {
-  console.log("App component render START. State:", { uri, mode, facing, recording }); // Log state at start
+// Define screen states
+type CameraFlowState = 'capturing' | 'previewing' | 'uploading' | 'error';
 
-  // Permissions Hooks
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
+// Define navigation params if any (e.g., pairingId from route)
+// This depends on your navigation setup. For now, let's assume pairingId comes from route.
+// Replace 'YourStackParamList' with your actual stack param list type
+type CameraScreenRouteProp = RouteProp<{ params: { pairingId?: string } }, 'params'>;
+// type CameraScreenNavigationProp = StackNavigationProp<YourStackParamList, 'CameraScreen'>;
 
-  // State Hooks
-  const ref = useRef<CameraView>(null); // Ref for CameraView component
-  const [uri, setUri] = useState<string | null>(null); // Stores URI of captured media
-  const [mode, setMode] = useState<CameraMode>("picture"); // 'picture' or 'video'
-  const [facing, setFacing] = useState<CameraType>("back"); // 'front' or 'back'
-  const [recording, setRecording] = useState(false); // Tracks if video is recording
-  const [isVideoPreview, setIsVideoPreview] = useState(false); // Tracks if preview is for video
+export default function CameraScreen() {
+  const navigation = useNavigation(); // Or use typed navigation if available
+  const route = useRoute<CameraScreenRouteProp>();
+  const pairingId = route.params?.pairingId;
 
-  // Animation Value
-  const shutterAnimation = useRef(new Animated.Value(1)).current; // For shutter button opacity animation
+  const { user } = useAuth(); // Get user for userId
 
-  // Effect to request media library permission on mount if needed
-  useEffect(() => {
-    console.log("useEffect for Media Permission Check. Status:", mediaPermission);
-    if (!mediaPermission?.granted && mediaPermission?.canAskAgain) {
-      console.log("Requesting Media Library permission.");
-      requestMediaPermission();
-    }
-  }, [mediaPermission]); // Re-run if mediaPermission status changes
+  const [flowState, setFlowState] = useState<CameraFlowState>('capturing');
+  const [capturedImageUri, setCapturedImageUri] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // --- Permission Handling ---
-  // Initial state while checking camera permissions
-  if (!cameraPermission) {
-     console.log("Camera permissions initial state.");
-    return <View />;
-  }
-
-  // Camera permissions not granted yet
-  if (!cameraPermission.granted) {
-    console.log("Camera permissions not granted.");
-    return (
-      <View style={styles.container}>
-        <Text style={styles.permissionText}>
-          We need your permission to use the camera.
-        </Text>
-        <Button onPress={requestCameraPermission} title="Grant Camera Permission" />
-      </View>
-    );
-  }
-
-  // --- Media Saving Function ---
-  const saveMedia = async (mediaUri: string | undefined, type: 'photo' | 'video') => {
-    console.log(`saveMedia called. URI: ${mediaUri}, Type: ${type}`);
-    if (!mediaUri) {
-        console.warn("saveMedia: No media URI provided.");
-        return;
-    }
-
-    // Check media library permission status again before saving
-    if (!mediaPermission?.granted) {
-      console.warn("saveMedia: Media Library permission not granted.");
-      Alert.alert(
-        "Permission Required",
-        "We need permission to save to your media library.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Grant Permission", onPress: requestMediaPermission }, // Ask again
-        ]
-      );
-      return; // Stop if no permission
-    }
-
-    try {
-      console.log("Attempting to save media to library...");
-      await MediaLibrary.saveToLibraryAsync(mediaUri);
-      console.log("Media saved successfully.");
-      Alert.alert("Saved!", `${type === 'photo' ? 'Photo' : 'Video'} saved to gallery.`);
-    } catch (error) {
-      console.error("Error saving media: ", error);
-      Alert.alert("Error", `Could not save ${type === 'photo' ? 'photo' : 'video'}.`);
+  const handleCaptureComplete = (result: CaptureResult) => {
+    if (result.imageUri && !result.error) {
+      setCapturedImageUri(result.imageUri);
+      setFlowState('previewing');
+      setErrorMessage(null);
+    } else {
+      setErrorMessage(result.error || 'Failed to capture image. Please try again.');
+      setFlowState('error');
+      setCapturedImageUri(null);
     }
   };
 
-  // --- Camera Actions ---
-
-  // Take Picture Function (with Animation)
-  const takePicture = async () => {
-    console.log("takePicture called.");
-    // Ensure ref exists and we are in picture mode
-    if (!ref.current || mode !== 'picture') {
-        console.warn("takePicture: Ref not ready or not in picture mode.");
-        return;
+  const handlePreviewSubmit = async (isPrivate: boolean, imageUri: string) => {
+    if (!user || !user.id) {
+      Alert.alert('Error', 'User not authenticated. Cannot upload photo.');
+      setFlowState('capturing'); // Reset flow
+      return;
     }
-
-    console.log("Starting shutter animation.");
-    // Start shutter animation (fade out, then back in)
-    Animated.sequence([
-      Animated.timing(shutterAnimation, {
-        toValue: 0,         // Target opacity 0 (fade out)
-        duration: 100,      // Duration of fade out
-        useNativeDriver: true, // Use native driver for performance
-      }),
-      Animated.timing(shutterAnimation, {
-        toValue: 1,         // Target opacity 1 (fade back in)
-        duration: 200,      // Duration of fade in
-        useNativeDriver: true,
-      }),
-    ]).start(); // Don't await the animation, let it run while capturing
-
-    try {
-      console.log("Calling ref.current.takePictureAsync()...");
-      const photo = await ref.current.takePictureAsync();
-      console.log("Picture taken successfully. URI:", photo?.uri);
-      setUri(photo?.uri);
-      setIsVideoPreview(false); // It's a photo preview
-      // Automatically try to save after taking
-      saveMedia(photo?.uri, 'photo');
-    } catch (error) {
-        console.error("Error taking picture: ", error); // Log the full error
-        Alert.alert("Error", "Could not take picture.");
-        // Reset animation in case of error? Generally not needed as it completes.
-        // shutterAnimation.setValue(1);
-    }
-  };
-
-  // Record Video Function
-  const recordVideo = async () => {
-    console.log(`recordVideo called. Currently recording: ${recording}`);
-    if (!ref.current) {
-        console.warn("recordVideo: Ref not ready.");
-        return;
-    }
-
-    // If currently recording, stop recording
-    if (recording) {
-      console.log("Stopping recording...");
-      setRecording(false);
-      ref.current.stopRecording(); // stopRecording resolves the recordAsync promise below
-      console.log("stopRecording called.");
+    if (!pairingId) {
+      Alert.alert('Error', 'Pairing information missing. Cannot upload photo.');
+      setFlowState('capturing'); // Reset flow
       return;
     }
 
-    // Start recording
-    setRecording(true);
-    console.log("Starting recording...");
+    setFlowState('uploading');
+    setUploadProgress(0);
+    setErrorMessage(null);
+
     try {
-        // Start recording and wait for the promise to resolve (when stopRecording is called)
-        const recordingPromise = ref.current.recordAsync();
-        console.log("recordAsync called, awaiting promise resolution...");
-        const video = await recordingPromise;
-        console.log("Recording finished (promise resolved). URI:", video?.uri);
-        setUri(video?.uri);
-        setIsVideoPreview(true); // It's a video preview
-        // Automatically try to save after recording stops
-        saveMedia(video?.uri, 'video');
+      const downloadURL = await uploadImage(imageUri, user.id, (progress) => {
+        setUploadProgress(progress);
+      });
 
-    } catch (error) {
-        console.error("Error recording video: ", error); // Log the full error
-        Alert.alert("Error", "Could not record video.");
-        setRecording(false); // Reset recording state on error
-    }
-  };
-
-  // --- UI Toggles ---
-
-  // Toggle between Picture and Video mode
-  const toggleMode = () => {
-    console.log("toggleMode called.");
-    setMode((prev) => {
-        const nextMode = prev === "picture" ? "video" : "picture";
-        console.log(`Mode changing from ${prev} to ${nextMode}`);
-        return nextMode;
-    });
-  };
-
-  // Toggle between Front and Back camera
-  const toggleFacing = () => {
-    console.log("toggleFacing called.");
-    setFacing((prev) => {
-        const nextFacing = prev === "back" ? "front" : "back";
-        console.log(`Facing changing from ${prev} to ${nextFacing}`);
-        return nextFacing;
-    });
-  };
-
-  const handleRetake = () => {
-    console.log("handleRetake called.");
-    // --- Introduce Delay ---
-    // Wrap the state update in a short timeout
-    setTimeout(() => {
-        console.log("handleRetake: Setting uri to null after delay.");
-        setUri(null);
-        // Reset video/photo flag might be good practice here too
-        setIsVideoPreview(false);
-        console.log("handleRetake: setUri(null) called, component should re-render with camera.");
-    }, 1000); // 100ms delay (adjust if needed, 50-150ms is typical)
-  };
-  // --- Render Functions ---
-
-  // Render Preview Screen (after taking photo/video)
-  const renderPreview = () => {
-    console.log("Rendering Preview Screen. URI:", uri, "IsVideo:", isVideoPreview);
-    return (
-      <View style={styles.previewContainer}>
-        {/* Conditional rendering for Image or Video placeholder */}
-        {isVideoPreview ? (
-            <View style={styles.videoPreview}>
-                <Feather name="video" size={100} color="black" />
-                <Text style={{marginTop: 10}}>Video Recorded</Text>
-                <Text style={{fontSize: 10, color: 'grey'}}>(Check Gallery)</Text>
-            </View>
-        ) : (
-          <Image
-            source={{ uri }} // uri should be valid string here
-            contentFit="contain"
-            style={styles.previewImage}
-            onError={(e) => console.error("Error loading preview image:", e.error)} // Add error handler for Image
-          />
-        )}
-
-        {/* Display the captured media URI */}
-        {uri && (
-            <View style={styles.uriContainer}>
-                <Text style={styles.uriLabel}>Media URI:</Text>
-                {/* Make the URI text selectable */}
-                <Text style={styles.uriText} selectable={true}>
-                    {uri}
-                </Text>
-            </View>
-        )}
-
-        {/* Button to go back to camera */}
-        <View style={styles.previewButtonContainer}>
-           <Button onPress={handleRetake} title={isVideoPreview ? "Record Another Video" : "Take Another Picture"} />
-           {/* Optional: Add a manual save button if needed */}
-           {/* <Button onPress={() => saveMedia(uri, isVideoPreview ? 'video' : 'photo')} title="Save Again" /> */}
-        </View>
-      </View>
-    );
-  };
-
-  // Render Camera Screen
-  const renderCamera = () => {
-    console.log("Rendering CameraView component START.");
-    try { // Wrap in try/catch for potential render errors, though less common
-        return (
-          <CameraView
-            style={styles.camera}
-            ref={ref}
-            mode={mode}
-            facing={facing}
-            enableAudio={mode === 'video'} // Enable audio only for video mode
-            responsiveOrientationWhenOrientationLocked
-            // --- Add logging for camera lifecycle events ---
-            onCameraReady={() => console.log("CameraView: Event -> onCameraReady")}
-            onMountError={(error) => console.error("CameraView: Event -> onMountError", error)} // Crucial for debugging crashes
-            // ---
-          >
-            {/* Bottom controls container */}
-            <View style={styles.shutterContainer}>
-              {/* Mode Toggle Button */}
-              <Pressable onPress={toggleMode} disabled={recording} style={styles.controlButton}>
-                {mode === "picture" ? (
-                  <AntDesign name="picture" size={32} color={recording ? "grey" : "white"} />
-                ) : (
-                  <Feather name="video" size={32} color={recording ? "grey" : "white"} />
-                )}
-              </Pressable>
-
-              {/* Shutter Button */}
-              <Pressable onPress={mode === "picture" ? takePicture : recordVideo}>
-                {({ pressed }) => (
-                  <View
-                    style={[
-                      styles.shutterBtn,
-                      {
-                        opacity: pressed ? 0.7 : 1, // General pressed feedback
-                        borderColor: recording ? "red" : "white", // Red border when recording
-                      },
-                    ]}
-                  >
-                    {/* Inner part of the shutter button - Animated for picture mode */}
-                    <Animated.View // Use Animated.View for opacity animation
-                      style={[
-                        styles.shutterBtnInner,
-                        {
-                          backgroundColor: mode === "picture" ? "white" : "red",
-                          // Dynamic styling for video recording state
-                          borderRadius: recording ? 10 : (mode === 'picture' ? 35 : 35), // Square when recording video, circle otherwise
-                          width: recording ? 35 : 70,
-                          height: recording ? 35 : 70,
-                          // Apply shutterAnimation opacity ONLY in picture mode
-                          opacity: mode === 'picture' ? shutterAnimation : 1,
-                        },
-                      ]}
-                    />
-                  </View>
-                )}
-              </Pressable>
-
-              {/* Facing Toggle Button */}
-              <Pressable onPress={toggleFacing} disabled={recording} style={styles.controlButton}>
-                <FontAwesome6 name="rotate-left" size={32} color={recording ? "grey" : "white"} />
-              </Pressable>
-            </View>
-          </CameraView>
-        );
-    } catch (renderError) {
-        console.error("Error rendering CameraView component:", renderError);
-        return <Text>Error rendering camera. Please check logs.</Text>; // Fallback UI
+      // Now update the pairing information in Firestore
+      await firebaseService.updatePairingWithPhoto(pairingId, user.id, downloadURL, isPrivate);
+      
+      Alert.alert('Success', 'Photo uploaded and pairing updated!');
+      // Navigate to a success screen, feed, or back to the previous screen
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        // navigation.navigate('Feed'); // Example
+      }
+    } catch (error: any) {
+      console.error('Upload or Firestore update failed:', error);
+      setErrorMessage(error.message || 'Failed to upload photo or update pairing.');
+      setFlowState('error');
     } finally {
-        console.log("Rendering CameraView component END.");
+      // If not error, flowState is handled by navigation, otherwise it stays 'error'
+      // If it was an error, we might want to allow retrying from preview or capture
     }
   };
 
-  // --- Main Return ---
-  console.log("App component render END. Determining view based on URI:", uri);
-  return (
-    <View style={styles.container}>
-      {/* Conditionally render Preview or Camera based on URI state */}
-      {uri ? renderPreview() : renderCamera()}
-    </View>
-  );
+  const handlePreviewRetake = () => {
+    setCapturedImageUri(null);
+    setFlowState('capturing');
+    setErrorMessage(null);
+  };
+
+  const handleCancel = () => {
+    // Navigate back or to a different screen
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  };
+
+  if (!user) {
+    // Optional: Handle case where user is not loaded yet, though AuthContext should manage this
+    return (
+      <SafeAreaView style={styles.containerCentered}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={globalStyles.bodyText}>Loading user...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  // Render based on flow state
+  switch (flowState) {
+    case 'capturing':
+      return (
+        <CameraCapture 
+          onCaptureComplete={handleCaptureComplete} 
+          onCancel={handleCancel} 
+        />
+      );
+    case 'previewing':
+      if (!capturedImageUri) {
+        // Should not happen if logic is correct, but handle defensively
+        setFlowState('capturing'); 
+        return null;
+      }
+      return (
+        <CameraPreview
+          imageUri={capturedImageUri}
+          onSubmit={handlePreviewSubmit}
+          onRetake={handlePreviewRetake}
+          onCancel={handleCancel} // Or could be handlePreviewRetake for cancel from preview
+          uploading={false} // This will be true when flowState is 'uploading',
+                            // but CameraPreview isn't rendered then. This prop might be redundant here.
+        />
+      );
+    case 'uploading':
+      return (
+        <SafeAreaView style={styles.containerCentered}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.statusText}>Uploading: {uploadProgress.toFixed(0)}%</Text>
+        </SafeAreaView>
+      );
+    case 'error':
+      return (
+        <SafeAreaView style={styles.containerCentered}>
+          <Text style={styles.errorTextTitle}>Upload Failed</Text>
+          <Text style={styles.errorText}>{errorMessage || 'An unknown error occurred.'}</Text>
+          <TouchableOpacity style={styles.button} onPress={handlePreviewRetake}>
+            <Text style={styles.buttonText}>Try Again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
+            <Text style={styles.buttonText}>Cancel</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      );
+    default:
+      // Fallback or initial loading state if needed
+      return (
+        <SafeAreaView style={styles.containerCentered}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </SafeAreaView>
+      );
+  }
 }
 
-// --- Styles ---
 const styles = StyleSheet.create({
-  container: {
+  containerCentered: {
     flex: 1,
-    backgroundColor: "#000", // Use black background for camera view consistency
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  permissionText: {
-    textAlign: "center",
-    marginBottom: 10,
-    paddingHorizontal: 20,
-    color: 'white', // Ensure text is visible on black background
-  },
-  camera: {
-    flex: 1,
-    width: "100%", // Camera should fill the screen width
-  },
-  previewContainer: {
-    flex: 1,
-    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0', // Lighter background for preview area
+    backgroundColor: COLORS.background, // Assuming COLORS.background exists
+    padding: 20,
   },
-  previewImage: {
-    width: '90%', // Leave some margin
-    aspectRatio: 3 / 4, // Common photo aspect ratio, adjust if needed
-    backgroundColor: '#ddd', // Placeholder background while loading
+  statusText: {
+    marginTop: 20,
+    fontSize: 16,
+    color: COLORS.text,
+    fontFamily: globalStyles.bodyText.fontFamily,
   },
-  videoPreview: {
-    width: '90%',
-    aspectRatio: 3 / 4, // Match image aspect ratio
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#e0e0e0', // Slightly different background for video placeholder
-    borderRadius: 10,
-  },
-  uriContainer: {
-    marginTop: 15, // Space above URI
-    marginBottom: 20, // Space below URI, before button
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    maxWidth: '90%', // Prevent very long URIs from overflowing badly
-  },
-  uriLabel: {
-    fontSize: 14,
+  errorTextTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
+    color: COLORS.error, // Assuming COLORS.error exists
+    marginBottom: 10,
+    fontFamily: globalStyles.title.fontFamily,
   },
-  uriText: {
-    fontSize: 11, // Smaller font for potentially long URIs
-    color: '#555',
+  errorText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
     textAlign: 'center',
-    // Consider adding line breaks for very long URIs if needed
-    // wordBreak: 'break-all', // Not standard in React Native Text, handle manually if required
+    marginBottom: 20,
+    fontFamily: globalStyles.bodyText.fontFamily,
   },
-  previewButtonContainer: {
-    // Add styling here if you need to position the button differently
+  button: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 8,
+    marginTop: 10,
+    width: '80%',
+    alignItems: 'center',
   },
-  shutterContainer: {
-    position: "absolute",
-    bottom: 40, // Adjust vertical position as needed
-    left: 0,
-    width: "100%",
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-around", // Distribute controls evenly
-    paddingHorizontal: 20, // Padding on the sides
-    backgroundColor: 'rgba(0,0,0,0.3)', // Semi-transparent background for controls
-    paddingVertical: 15, // Vertical padding for the control bar
-    zIndex: 10, // Ensure controls are above the camera view
+  cancelButton: {
+    backgroundColor: COLORS.secondary, // Assuming COLORS.secondary for cancel
   },
-  // Style for side control buttons (mode/facing toggle) for consistent sizing/touch area
-  controlButton: {
-      padding: 10, // Add padding to increase touchable area
-  },
-  shutterBtn: {
-    backgroundColor: "transparent", // Outer ring is transparent
-    borderWidth: 4, // Thickness of the outer ring
-    borderColor: "white", // Default border color
-    width: 80, // Size of the outer ring
-    height: 80,
-    borderRadius: 40, // Make it a circle
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  shutterBtnInner: {
-    // Inner button styles (width, height, borderRadius, backgroundColor, opacity)
-    // are applied dynamically within the Animated.View component based on mode/recording state.
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: globalStyles.primaryButtonText.fontFamily,
   },
 });

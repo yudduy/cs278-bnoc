@@ -27,7 +27,7 @@ import { Comment } from '../../../types';
 import { formatDate } from '../../../utils/dateUtils';
 
 // Default avatar placeholder
-const defaultAvatar = 'https://via.placeholder.com/100';
+const defaultAvatar = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 
 interface CommentListProps {
   pairingId: string;

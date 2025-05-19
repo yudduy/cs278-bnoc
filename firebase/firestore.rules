@@ -83,5 +83,24 @@ service cloud.firestore {
       // No client-side writes allowed (handled by cloud functions)
       allow write: if false;
     }
+
+    // ChatRooms: Only participants can read/write.
+    match /chatRooms/{chatRoomId} {
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.userIds;
+      // allow create: // Typically created by backend Cloud Function when pairing is made
+    }
+
+    // Messages subcollection for ChatRooms
+    match /chatRooms/{chatRoomId}/messages/{messageId} {
+      allow read: if request.auth != null && get(/databases/$(database)/documents/chatRooms/$(chatRoomId)).data.userIds[0] == request.auth.uid || get(/databases/$(database)/documents/chatRooms/$(chatRoomId)).data.userIds[1] == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.senderId == request.auth.uid && (get(/databases/$(database)/documents/chatRooms/$(chatRoomId)).data.userIds[0] == request.auth.uid || get(/databases/$(database)/documents/chatRooms/$(chatRoomId)).data.userIds[1] == request.auth.uid);
+      // No updates/deletes for messages in MVP for simplicity
+    }
+
+    // Denormalized UserFeeds (more in Phase 3)
+    match /userFeeds/{userId}/items/{itemId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Writes are typically handled by Cloud Functions
+    }
   }
 }

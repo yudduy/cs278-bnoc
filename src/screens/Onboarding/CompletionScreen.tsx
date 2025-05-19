@@ -2,23 +2,23 @@
  * CompletionScreen
  * 
  * Final onboarding screen that congratulates the user and directs them to the main app.
+ * Updated with black and white theme.
  */
 
 import React, { useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
-  Image,
   SafeAreaView,
   Animated,
   Easing,
+  StatusBar
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../config/colors';
-import { globalStyles } from '../../styles/globalStyles';
+import { COLORS } from '../../config/theme';
+import { onboardingStyles } from './OnboardingStyles';
 
 const CompletionScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -75,67 +75,79 @@ const CompletionScreen: React.FC = () => {
   };
   
   return (
-    <SafeAreaView style={globalStyles.container}>
-      <View style={styles.container}>
-        <View style={styles.content}>
+    <SafeAreaView style={onboardingStyles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <View style={onboardingStyles.container}>
+        {/* Progress indicator */}
+        <View style={onboardingStyles.progressContainer}>
+          <View style={onboardingStyles.progressDot} />
+          <View style={onboardingStyles.progressDot} />
+          <View style={onboardingStyles.progressDot} />
+          <View style={[onboardingStyles.progressDot, onboardingStyles.progressDotActive]} />
+        </View>
+        
+        <View style={[onboardingStyles.contentContainer, { alignItems: 'center' }]}>
+          {/* Animated checkmark */}
           <Animated.View
             style={[
-              styles.checkmarkContainer,
+              onboardingStyles.checkmarkContainer,
               {
                 transform: [{ scale: checkmarkScale }],
                 opacity: checkmarkOpacity,
               },
             ]}
           >
-            <View style={styles.checkmark}>
-              <Ionicons name="checkmark" size={80} color="#FFFFFF" />
+            <View style={onboardingStyles.checkmark}>
+              <Ionicons name="checkmark" size={80} color={COLORS.primary} />
             </View>
           </Animated.View>
           
+          {/* Animated text content */}
           <Animated.View
             style={[
-              styles.textContainer,
+              { alignItems: 'center', width: '100%' },
               { opacity: textOpacity },
             ]}
           >
-            <Text style={styles.title}>You're All Set!</Text>
-            <Text style={styles.subtitle}>
-              Your profile is ready, and you're all set to start connecting with new people every day.
+            <Text style={onboardingStyles.title}>You're All Set!</Text>
+            <Text style={onboardingStyles.subtitle}>
+              Your profile is ready. Now you can start connecting with Stanford students daily.
             </Text>
             
-            <View style={styles.featuresContainer}>
-              <View style={styles.featureItem}>
-                <View style={[styles.featureIcon, { backgroundColor: COLORS.success }]}>
-                  <Ionicons name="people" size={24} color="#FFFFFF" />
+            {/* Features list */}
+            <View style={{ width: '100%', marginTop: 32 }}>
+              <View style={onboardingStyles.featureItem}>
+                <View style={onboardingStyles.featureIcon}>
+                  <Ionicons name="people-outline" size={24} color={COLORS.primary} />
                 </View>
-                <View style={styles.featureText}>
-                  <Text style={styles.featureTitle}>Daily Pairings</Text>
-                  <Text style={styles.featureDescription}>
-                    You'll be paired with someone new every day at 7:00 AM.
+                <View style={onboardingStyles.featureText}>
+                  <Text style={onboardingStyles.featureTitle}>Daily Connections</Text>
+                  <Text style={onboardingStyles.featureDescription}>
+                    You'll be paired with someone new each day
                   </Text>
                 </View>
               </View>
               
-              <View style={styles.featureItem}>
-                <View style={[styles.featureIcon, { backgroundColor: COLORS.primary }]}>
-                  <Ionicons name="camera" size={24} color="#FFFFFF" />
+              <View style={onboardingStyles.featureItem}>
+                <View style={onboardingStyles.featureIcon}>
+                  <Ionicons name="camera-outline" size={24} color={COLORS.primary} />
                 </View>
-                <View style={styles.featureText}>
-                  <Text style={styles.featureTitle}>Take Selfies</Text>
-                  <Text style={styles.featureDescription}>
-                    Complete your daily pairing by taking a selfie together.
+                <View style={onboardingStyles.featureText}>
+                  <Text style={onboardingStyles.featureTitle}>Selfie Moments</Text>
+                  <Text style={onboardingStyles.featureDescription}>
+                    Take selfies to commemorate your daily connections
                   </Text>
                 </View>
               </View>
               
-              <View style={styles.featureItem}>
-                <View style={[styles.featureIcon, { backgroundColor: COLORS.accent }]}>
-                  <Ionicons name="heart" size={24} color="#FFFFFF" />
+              <View style={onboardingStyles.featureItem}>
+                <View style={onboardingStyles.featureIcon}>
+                  <Ionicons name="star-outline" size={24} color={COLORS.primary} />
                 </View>
-                <View style={styles.featureText}>
-                  <Text style={styles.featureTitle}>Build Connections</Text>
-                  <Text style={styles.featureDescription}>
-                    Grow your network and make new friends every day.
+                <View style={onboardingStyles.featureText}>
+                  <Text style={onboardingStyles.featureTitle}>Build Your Network</Text>
+                  <Text style={onboardingStyles.featureDescription}>
+                    Expand your Stanford connections one day at a time
                   </Text>
                 </View>
               </View>
@@ -143,103 +155,18 @@ const CompletionScreen: React.FC = () => {
           </Animated.View>
         </View>
         
-        <Animated.View style={{ opacity: buttonOpacity }}>
+        {/* Animated button */}
+        <Animated.View style={{ opacity: buttonOpacity, marginBottom: 24 }}>
           <TouchableOpacity
-            style={styles.finishButton}
+            style={onboardingStyles.primaryButton}
             onPress={handleFinish}
           >
-            <Text style={styles.finishButtonText}>Get Started</Text>
+            <Text style={onboardingStyles.primaryButtonText}>Enter BNOC</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    justifyContent: 'space-between',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkmarkContainer: {
-    marginBottom: 40,
-  },
-  checkmark: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: COLORS.success,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textContainer: {
-    alignItems: 'center',
-  },
-  title: {
-    fontFamily: 'ChivoBold',
-    fontSize: 28,
-    color: COLORS.text,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginBottom: 40,
-    lineHeight: 24,
-  },
-  featuresContainer: {
-    width: '100%',
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  featureText: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-  },
-  finishButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  finishButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: '#FFFFFF',
-  },
-});
 
 export default CompletionScreen;

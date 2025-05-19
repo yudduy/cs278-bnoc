@@ -2,13 +2,13 @@
  * ProfileSetupScreen
  * 
  * Allows users to set up their profile during onboarding.
+ * Updated with black and white theme.
  */
 
 import React, { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   TextInput,
   Image,
@@ -16,11 +16,12 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  StatusBar
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../config/colors';
-import { globalStyles } from '../../styles/globalStyles';
+import { COLORS } from '../../config/theme';
+import { onboardingStyles } from './OnboardingStyles';
 
 const ProfileSetupScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -28,7 +29,10 @@ const ProfileSetupScreen: React.FC = () => {
   // State for profile fields
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
-  const [profileImage, setProfileImage] = useState('https://picsum.photos/200/200?random=user');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  
+  // Track input focus for styling
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
   
   const handleDisplayNameChange = (text: string) => {
     setDisplayName(text);
@@ -65,233 +69,144 @@ const ProfileSetupScreen: React.FC = () => {
     navigation.goBack();
   };
   
+  const handleInputFocus = (inputName: string) => {
+    setFocusedInput(inputName);
+  };
+  
+  const handleInputBlur = () => {
+    setFocusedInput(null);
+  };
+  
   return (
-    <SafeAreaView style={globalStyles.container}>
+    <SafeAreaView style={onboardingStyles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.container}>
-          <View style={styles.header}>
+        <View style={onboardingStyles.container}>
+          {/* Header with back button */}
+          <View style={onboardingStyles.header}>
             <TouchableOpacity
-              style={styles.backButton}
+              style={onboardingStyles.backButton}
               onPress={handleBack}
             >
-              <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+              <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Profile Setup</Text>
-            <View style={{ width: 24 }} />
+            <Text style={onboardingStyles.headerTitle}>Create Profile</Text>
+            <View style={{ width: 40 }} />
           </View>
           
-          <ScrollView contentContainerStyle={styles.content}>
-            <Text style={styles.title}>Create Your Profile</Text>
-            <Text style={styles.subtitle}>
-              Set up your profile so other users can recognize you.
-            </Text>
-            
-            <View style={styles.imageSection}>
-              <TouchableOpacity
-                style={styles.imageContainer}
-                onPress={handleImageSelect}
-              >
-                <Image
-                  source={{ uri: profileImage }}
-                  style={styles.profileImage}
-                />
-                <View style={styles.imageBadge}>
-                  <Ionicons name="camera" size={20} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-              <Text style={styles.imageHint}>Tap to choose a profile photo</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Progress indicator */}
+            <View style={onboardingStyles.progressContainer}>
+              <View style={onboardingStyles.progressDot} />
+              <View style={onboardingStyles.progressDot} />
+              <View style={[onboardingStyles.progressDot, onboardingStyles.progressDotActive]} />
+              <View style={onboardingStyles.progressDot} />
             </View>
             
-            <View style={styles.formSection}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Display Name</Text>
+            {/* Profile image section */}
+            <View style={onboardingStyles.imageSection}>
+              <TouchableOpacity
+                style={onboardingStyles.imageContainer}
+                onPress={handleImageSelect}
+              >
+                {profileImage ? (
+                  <Image
+                    source={{ uri: profileImage }}
+                    style={onboardingStyles.profileImage}
+                  />
+                ) : (
+                  <View style={[onboardingStyles.profileImage, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <Ionicons name="person-outline" size={40} color={COLORS.textSecondary} />
+                  </View>
+                )}
+                <View style={onboardingStyles.imageBadge}>
+                  <Ionicons name="camera-outline" size={20} color={COLORS.primary} />
+                </View>
+              </TouchableOpacity>
+              <Text style={onboardingStyles.imageHint}>Tap to choose a profile photo</Text>
+            </View>
+            
+            {/* Form fields */}
+            <View style={{ marginBottom: 32 }}>
+              {/* Display Name Input */}
+              <View style={onboardingStyles.inputContainer}>
+                <Text style={onboardingStyles.inputLabel}>Display Name</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[
+                    onboardingStyles.input,
+                    focusedInput === 'displayName' && onboardingStyles.inputFocused
+                  ]}
                   value={displayName}
                   onChangeText={handleDisplayNameChange}
-                  placeholder="Enter your name"
-                  placeholderTextColor={COLORS.textLight}
+                  placeholder="Your name"
+                  placeholderTextColor={COLORS.textSecondary}
                   autoCapitalize="words"
+                  onFocus={() => handleInputFocus('displayName')}
+                  onBlur={handleInputBlur}
+                  selectionColor={COLORS.primary}
                 />
               </View>
               
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Username</Text>
+              {/* Username Input */}
+              <View style={onboardingStyles.inputContainer}>
+                <Text style={onboardingStyles.inputLabel}>Username</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[
+                    onboardingStyles.input,
+                    focusedInput === 'username' && onboardingStyles.inputFocused
+                  ]}
                   value={username}
                   onChangeText={handleUsernameChange}
-                  placeholder="Choose a username"
-                  placeholderTextColor={COLORS.textLight}
+                  placeholder="Choose a unique username"
+                  placeholderTextColor={COLORS.textSecondary}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  onFocus={() => handleInputFocus('username')}
+                  onBlur={handleInputBlur}
+                  selectionColor={COLORS.primary}
                 />
-                <Text style={styles.inputHint}>
-                  Only letters, numbers, and underscores. No spaces.
+                <Text style={onboardingStyles.inputHint}>
+                  Letters, numbers, and underscores only. No spaces.
                 </Text>
               </View>
             </View>
             
-            <View style={styles.infoContainer}>
+            {/* Info message */}
+            <View style={onboardingStyles.infoContainer}>
               <Ionicons name="information-circle-outline" size={24} color={COLORS.textSecondary} />
-              <Text style={styles.infoText}>
-                You can change your profile information later in the app settings.
+              <Text style={onboardingStyles.infoText}>
+                You can change your profile information later in settings.
               </Text>
             </View>
+            
+            {/* Navigation buttons */}
+            <View style={{ marginTop: 32, marginBottom: 24 }}>
+              <TouchableOpacity
+                style={[
+                  onboardingStyles.primaryButton,
+                  (!displayName.trim() || !username.trim()) && onboardingStyles.disabledButton
+                ]}
+                onPress={handleNext}
+                disabled={!displayName.trim() || !username.trim()}
+              >
+                <Text style={onboardingStyles.primaryButtonText}>Continue</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={{ alignItems: 'center', marginTop: 8 }}
+                onPress={handleBack}
+              >
+                <Text style={{ color: COLORS.textSecondary, fontFamily: 'ChivoRegular' }}>Go Back</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
-          
-          <TouchableOpacity
-            style={[
-              styles.nextButton,
-              (!displayName.trim() || !username.trim()) && styles.disabledButton
-            ]}
-            onPress={handleNext}
-            disabled={!displayName.trim() || !username.trim()}
-          >
-            <Text style={styles.nextButtonText}>Continue</Text>
-          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: COLORS.text,
-  },
-  content: {
-    padding: 24,
-    paddingBottom: 100,
-  },
-  title: {
-    fontFamily: 'ChivoBold',
-    fontSize: 24,
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginBottom: 32,
-  },
-  imageSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  imageContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: COLORS.backgroundLight,
-    position: 'relative',
-    marginBottom: 12,
-  },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  imageBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: COLORS.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.background,
-  },
-  imageHint: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  formSection: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  input: {
-    height: 48,
-    backgroundColor: COLORS.backgroundLight,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
-    color: COLORS.text,
-  },
-  inputHint: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-  infoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.backgroundLight,
-    padding: 16,
-    borderRadius: 12,
-  },
-  infoText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginLeft: 12,
-    flex: 1,
-    lineHeight: 20,
-  },
-  nextButton: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  disabledButton: {
-    backgroundColor: COLORS.disabled,
-  },
-  nextButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 18,
-    color: '#FFFFFF',
-  },
-});
 
 export default ProfileSetupScreen;

@@ -15,6 +15,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -31,6 +33,11 @@ interface NotificationContextType {
     trigger?: Notifications.NotificationTriggerInput
   ) => Promise<string>;
   dismissAllNotifications: () => Promise<void>;
+  sendLocalNotification: (
+    title: string,
+    body: string,
+    data?: any
+  ) => Promise<void>;
 }
 
 // Create context with default values
@@ -41,6 +48,7 @@ const NotificationContext = createContext<NotificationContextType>({
   requestPushPermission: async () => false,
   scheduleLocalNotification: async () => '',
   dismissAllNotifications: async () => {},
+  sendLocalNotification: async () => {},
 });
 
 // Provider props interface
@@ -90,8 +98,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     
     // Cleanup listeners on unmount
     return () => {
-      Notifications.removeNotificationSubscription(notificationReceivedListener);
-      Notifications.removeNotificationSubscription(notificationResponseListener);
+      notificationReceivedListener.remove();
+      notificationResponseListener.remove();
     };
   }, [onNotificationReceived, onNotificationResponse]);
   
@@ -113,7 +121,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
   const registerForPushNotifications = async (): Promise<void> => {
     try {
       // Skip for simulator
-      if (!Platform.OS === 'web') {
+      if (Platform.OS !== 'web') {
         const token = (await Notifications.getExpoPushTokenAsync()).data;
         setPushToken(token);
         
@@ -169,6 +177,23 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     }
   };
   
+  // Send an immediate local notification
+  const sendLocalNotification = async (
+    title: string,
+    body: string,
+    data?: any
+  ): Promise<void> => {
+    try {
+      await Notifications.presentNotificationAsync({
+        title,
+        body,
+        data: data || {},
+      });
+    } catch (error) {
+      console.error('Error sending local notification:', error);
+    }
+  };
+  
   // Dismiss all notifications
   const dismissAllNotifications = async (): Promise<void> => {
     try {
@@ -187,6 +212,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     requestPushPermission,
     scheduleLocalNotification,
     dismissAllNotifications,
+    sendLocalNotification,
   };
   
   return (

@@ -214,7 +214,7 @@ const SettingsScreen: React.FC = () => {
   
   // Handle blocked users
   const navigateToBlockedUsers = () => {
-    Alert.alert('Coming Soon', 'Blocked users management will be available in a future update.');
+    navigation.navigate('BlockedUsers');
   };
   
   // Handle export data

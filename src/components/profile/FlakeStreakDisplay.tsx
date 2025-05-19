@@ -12,6 +12,8 @@ import {
   Animated,
 } from 'react-native';
 import { COLORS } from '../../config/theme';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 interface FlakeStreakDisplayProps {
   currentStreak: number;
@@ -25,18 +27,12 @@ const FlakeStreakDisplay: React.FC<FlakeStreakDisplayProps> = ({
   // Cap displayed streak at 7+
   const displayedStreak = currentStreak >= 7 ? '7+' : currentStreak.toString();
   
-  // Animations
+  // Animation for pulse effect
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const colorAnim = useRef(new Animated.Value(currentStreak)).current;
   
-  // Start animations on mount and when streak changes
+  // Start pulse animation if there's an active streak
   useEffect(() => {
-    // Update color animation value
-    colorAnim.setValue(currentStreak);
-    
     if (currentStreak > 0) {
-      // Pulse animation
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -51,111 +47,57 @@ const FlakeStreakDisplay: React.FC<FlakeStreakDisplayProps> = ({
           }),
         ])
       ).start();
-      
-      // Rotate animation for 🥶 emoji
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(rotateAnim, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotateAnim, {
-            toValue: -1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotateAnim, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
     }
-  }, [currentStreak]);
-  
-  // Interpolate rotate value
-  const rotate = rotateAnim.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ['-10deg', '0deg', '10deg'],
-  });
-  
-  // Interpolate background color based on streak severity
-  const backgroundColor = colorAnim.interpolate({
-    inputRange: [0, 3, 5, 7],
-    outputRange: [
-      COLORS.success,
-      '#FFA41B', // Yellow-Orange for moderate streak
-      '#FF6B35', // Orange-Red for concerning streak
-      '#DC2626', // Red for serious streak
-    ],
-  });
-  
-  // Get congratulation or warning message based on streak
-  const getMessage = () => {
-    if (currentStreak === 0) {
-      return "Great job! Keep completing your daily pairings!";
-    } else if (currentStreak === 1) {
-      return "You missed yesterday's pairing. Complete today's to reset your streak!";
-    } else if (currentStreak <= 3) {
-      return `You've missed ${currentStreak} pairings in a row. Complete today's to reset!`;
-    } else if (currentStreak <= 6) {
-      return `${currentStreak} missed pairings! Complete today's pairing to get back on track.`;
-    } else {
-      return "Your streak is getting serious! Complete today's pairing to reset it.";
-    }
-  };
+    
+    return () => {
+      pulseAnim.stopAnimation();
+    };
+  }, [currentStreak, pulseAnim]);
   
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Current Flake Streak</Text>
       
-      <View style={styles.streakContainer}>
-        <Animated.View
-          style={[
-            styles.streakDisplay,
-            {
-              transform: [
-                { scale: currentStreak > 0 ? pulseAnim : 1 },
-              ],
-              backgroundColor: currentStreak > 0 ? backgroundColor : COLORS.success,
-            },
-          ]}
-        >
-          {currentStreak > 0 ? (
-            <View style={styles.streakContent}>
-              <Animated.Text
-                style={[
-                  styles.streakEmoji,
-                  { transform: [{ rotate }] },
-                ]}
-              >
-                🥶
-              </Animated.Text>
-              <Text style={styles.streakText}>{displayedStreak}</Text>
-            </View>
-          ) : (
-            <Text style={styles.successEmoji}>✅</Text>
-          )}
-        </Animated.View>
-        
-        <View style={styles.streakInfoContainer}>
-          <Text style={styles.streakMessage}>{getMessage()}</Text>
-          <Text style={styles.maxStreakText}>Longest streak: {maxStreak}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.infoContainer}>
-        <Text style={styles.infoText}>
-          Flake Streaks increase when you miss a daily pairing, and reset to 0 when you complete one.
+      <Animated.View 
+        style={[
+          styles.streakDisplay,
+          { transform: [{ scale: currentStreak > 0 ? pulseAnim : 1 }] },
+          currentStreak > 0 ? styles.activeStreak : styles.noStreak
+        ]}
+      >
+        <Text style={[
+          styles.streakText,
+          currentStreak > 0 ? styles.activeStreakText : styles.noStreakText
+        ]}>
+          {currentStreak > 0 ? `🥶 ${displayedStreak}` : '✓'}
         </Text>
-        
-        {currentStreak > 0 && (
-          <Text style={styles.tipText}>
-            Tip: You can use a Snooze Token to skip a pairing without increasing your streak.
-          </Text>
-        )}
+      </Animated.View>
+      
+      <Text style={styles.caption}>
+        {currentStreak > 0
+          ? `You've missed ${currentStreak} daily pairing${currentStreak !== 1 ? 's' : ''} in a row`
+          : 'No active streak! Keep it up!'}
+      </Text>
+      
+      <Text style={styles.maxStreak}>
+        Max Streak: {maxStreak}
+      </Text>
+      
+      {/* Tip based on streak status */}
+      <View style={styles.tipContainer}>
+        <MaterialCommunityIcons 
+          name={currentStreak > 3 ? "alert-circle-outline" : "information-outline"} 
+          size={20} 
+          color={currentStreak > 3 ? COLORS.warning : COLORS.secondary} 
+        />
+        <Text style={[
+          styles.tipText,
+          currentStreak > 3 ? styles.warningTip : styles.infoTip
+        ]}>
+          {currentStreak > 3
+            ? 'Complete today\'s pairing to reset your streak!'
+            : 'Complete daily pairings to keep your streak at zero!'}
+        </Text>
       </View>
     </View>
   );
@@ -163,22 +105,22 @@ const FlakeStreakDisplay: React.FC<FlakeStreakDisplayProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    padding: 20,
+    width: '100%',
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginVertical: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   title: {
-    fontFamily: 'ChivoBold',
     fontSize: 18,
-    color: COLORS.text,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  streakContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    fontWeight: 'bold',
+    color: '#333',
     marginBottom: 16,
   },
   streakDisplay: {
@@ -187,56 +129,53 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginBottom: 16,
   },
-  streakContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  activeStreak: {
+    backgroundColor: '#E53935', // Red for active streak
   },
-  streakEmoji: {
-    fontSize: 22,
-    marginBottom: 4,
-  },
-  successEmoji: {
-    fontSize: 32,
+  noStreak: {
+    backgroundColor: '#4CAF50', // Green for no streak
   },
   streakText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 28,
-    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
-  streakInfoContainer: {
-    flex: 1,
+  activeStreakText: {
+    color: '#fff',
   },
-  streakMessage: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.text,
-    marginBottom: 4,
-    lineHeight: 20,
+  noStreakText: {
+    color: '#fff',
   },
-  maxStreakText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-  infoContainer: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 16,
-  },
-  infoText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 13,
-    color: COLORS.textSecondary,
+  caption: {
+    fontSize: 16,
+    color: '#555',
     textAlign: 'center',
     marginBottom: 8,
   },
+  maxStreak: {
+    fontSize: 14,
+    color: '#777',
+    marginBottom: 16,
+  },
+  tipContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
+    padding: 12,
+    borderRadius: 8,
+    width: '100%',
+  },
   tipText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 13,
-    color: COLORS.primary,
-    textAlign: 'center',
+    fontSize: 14,
+    marginLeft: 8,
+    flex: 1,
+  },
+  warningTip: {
+    color: COLORS.warning,
+  },
+  infoTip: {
+    color: COLORS.secondary,
   },
 });
 
