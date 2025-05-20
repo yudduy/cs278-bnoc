@@ -9,8 +9,8 @@ import {
   Image,
 } from 'react-native';
 import { COLORS } from '../../config/colors';
-import { useAuth } from '../../hooks/useAuth';
-import { addCommentToPairing } from '../../services/feedService';
+import { useAuth } from '../../context/AuthContext';
+import { addCommentToPairing } from '../../services/pairingService';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 interface CommentInputProps {
@@ -32,10 +32,10 @@ const CommentInput = ({ pairingId, onCommentAdded }: CommentInputProps) => {
       
       await addCommentToPairing(
         pairingId, 
-        comment.trim(), 
         user.id, 
         user.username || user.displayName || 'User', 
-        user.photoURL
+        user.photoURL || '',
+        comment.trim()
       );
       
       setComment('');

@@ -7,6 +7,7 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import { User } from '../types/user';
 import * as authService from '../services/authService';
+import logger from '../utils/logger';
 
 // Context type definitions
 interface AuthContextType {
@@ -52,18 +53,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const loadAuth = async () => {
       try {
-        console.log('Loading stored authentication');
+        logger.info('Loading stored authentication');
         const storedUser = await authService.loadStoredAuth();
         
         if (storedUser) {
-          console.log('Found stored user:', storedUser.id);
+          logger.info(`Found stored user: ${storedUser.id}`);
           setUser(storedUser);
           setIsAuthenticated(true);
         } else {
-          console.log('No stored authentication found');
+          logger.info('No stored authentication found');
         }
       } catch (err) {
-        console.error('Error loading authentication:', err);
+        logger.error('Error loading authentication:', err);
+        setError('Failed to load authentication data. Please try again.');
       } finally {
         setIsLoading(false);
       }
@@ -78,15 +80,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(true);
       setError(null);
       
+      if (!email || !password) {
+        setError('Email and password are required');
+        setIsLoading(false);
+        return;
+      }
+      
+      logger.debug('Attempting to sign in user', { email });
       const userData = await authService.signIn(email, password);
       
+      if (!userData) {
+        throw new Error('No user data returned after sign in');
+      }
+      
+      logger.info(`User signed in successfully: ${userData.id}`);
       setUser(userData);
       setIsAuthenticated(true);
     } catch (err: any) {
-      console.error('Sign in error:', err);
+      logger.error('Sign in error:', err);
       
-      // Set error message
-      setError(err.message || 'Failed to sign in. Please try again.');
+      // Set user-friendly error message based on error type
+      if (err.message?.includes('credentials')) {
+        setError('Invalid email or password. Please try again.');
+      } else if (err.message?.includes('network')) {
+        setError('Network error. Please check your connection.');
+      } else {
+        setError(err.message || 'Failed to sign in. Please try again.');
+      }
       
       setUser(null);
       setIsAuthenticated(false);
@@ -108,15 +128,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
       
+      if (!username || username.length < 3) {
+        setError('Username must be at least 3 characters long');
+        setIsLoading(false);
+        return;
+      }
+      
+      if (!password || password.length < 6) {
+        setError('Password must be at least 6 characters long');
+        setIsLoading(false);
+        return;
+      }
+      
+      logger.debug('Attempting to sign up user', { email, username });
       const userData = await authService.signUp(email, password, username);
       
+      if (!userData) {
+        throw new Error('No user data returned after sign up');
+      }
+      
+      logger.info(`User registered successfully: ${userData.id}`);
       setUser(userData);
       setIsAuthenticated(true);
     } catch (err: any) {
-      console.error('Sign up error:', err);
+      logger.error('Sign up error:', err);
       
-      // Set error message
-      setError(err.message || 'Failed to create account. Please try again.');
+      // Set user-friendly error message based on error type
+      if (err.message?.includes('email')) {
+        setError('This email is already in use. Please try another.');
+      } else if (err.message?.includes('username')) {
+        setError('This username is already taken. Please try another.');
+      } else if (err.message?.includes('network')) {
+        setError('Network error. Please check your connection.');
+      } else {
+        setError(err.message || 'Failed to create account. Please try again.');
+      }
       
       setUser(null);
       setIsAuthenticated(false);
@@ -129,13 +175,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signOut = async () => {
     try {
       setIsLoading(true);
+      logger.debug('Signing out user', { userId: user?.id });
       await authService.signOut();
       
       // Update state
       setUser(null);
       setIsAuthenticated(false);
+      logger.info('User signed out successfully');
     } catch (err: any) {
-      console.error('Sign out error:', err);
+      logger.error('Sign out error:', err);
       setError(err.message || 'Failed to sign out');
     } finally {
       setIsLoading(false);
@@ -148,10 +196,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(true);
       setError(null);
       
+      if (!email) {
+        setError('Email is required');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Basic validation
+      if (!email.endsWith('@stanford.edu')) {
+        setError('Please use a Stanford email address');
+        setIsLoading(false);
+        return;
+      }
+      
+      logger.debug('Requesting password reset', { email });
       await authService.resetPassword(email);
+      logger.info(`Password reset email sent to ${email}`);
     } catch (err: any) {
-      console.error('Password reset error:', err);
-      setError(err.message || 'Failed to send password reset email');
+      logger.error('Password reset error:', err);
+      
+      if (err.message?.includes('user') || err.message?.includes('email')) {
+        setError('No account found with this email address');
+      } else if (err.message?.includes('network')) {
+        setError('Network error. Please check your connection.');
+      } else {
+        setError(err.message || 'Failed to send password reset email');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -160,22 +230,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Update user profile method
   const updateUserProfile = async (data: Partial<User>) => {
     if (!user || !user.id) {
-      setError('Cannot update profile: No user authenticated');
+      const errorMsg = 'Cannot update profile: No user authenticated';
+      logger.error(errorMsg);
+      setError(errorMsg);
       return;
     }
     
     try {
       setIsLoading(true);
+      logger.debug('Updating user profile', { userId: user.id, fields: Object.keys(data) });
+      
       // In a real app, you would update the user profile in the database
-      // For this simplified version, we're just updating local state
+      // and await the result here before updating local state
       
       // Update local state
       const updatedUser = { ...user, ...data };
       setUser(updatedUser);
       
-      // In a real app, you would also update AsyncStorage
+      logger.info(`User profile updated successfully: ${user.id}`);
     } catch (err: any) {
-      console.error('Profile update error:', err);
+      logger.error('Profile update error:', err);
       setError(err.message || 'Failed to update profile');
     } finally {
       setIsLoading(false);
@@ -213,7 +287,7 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   
   if (context === undefined) {
-    console.error('useAuth must be used within an AuthProvider');
+    logger.error('useAuth must be used within an AuthProvider');
     throw new Error('useAuth must be used within an AuthProvider');
   }
   

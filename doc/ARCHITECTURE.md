@@ -27,7 +27,7 @@ These contexts serve as a centralized state management system, reducing prop dri
 
 Business logic is encapsulated in custom hooks, promoting reusability and separation of concerns:
 
-- **useAuth** - Authentication operations
+- **useAuth** - Authentication operations (integrated directly in AuthContext)
 - **usePairing** - Pairing retrieval and operations
 - **useCamera** - Camera functionality and image capture
 - **useFeed** - Feed data fetching and pagination
@@ -51,6 +51,14 @@ UI is built using composable components that follow the single responsibility pr
 - Small, focused components with specific responsibilities
 - Component composition to build complex interfaces
 - Clear props interfaces for all components
+
+### 5. Canonical Source Pattern
+
+The app now follows a canonical source pattern for utilities and types:
+
+- **Canonical utilities** - Core utilities are defined in centralized locations (e.g., camera utilities in `camera/cameraUtils.ts`)
+- **Re-export mechanism** - For backward compatibility, older utility files re-export from the canonical sources
+- **Type consolidation** - Types are defined in specialized files and re-exported from a central location
 
 ## Data Flow Architecture
 
@@ -133,27 +141,64 @@ UI is built using composable components that follow the single responsibility pr
 │FindFriends  │     │ userService │     │  Firebase   │
 │   Screen    │────▶│updateConnect│────▶│ Firestore   │
 └─────────────┘     └─────────────┘     └─────────────┘
-                           │                   │
-                           ▼                   ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │ Mutual Friend│     │ connections │
-                    │  Updates    │     │   Array     │
-                    └─────────────┘     └─────────────┘
-                           │                   │
-                           ▼                   ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │ User Interface │  │Pairing Algo │
-                    │ Updates       │  │ Preferences  │
-                    └─────────────┘    └─────────────┘
+        │                   │                   │
+        │                   ▼                   ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│AddFriends   │     │ Mutual Friend│     │ connections │
+│Component    │     │  Updates    │     │   Array     │
+└─────────────┘     └─────────────┘     └─────────────┘
+        │                   │                   │
+        ▼                   ▼                   ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ User Interface │  │Pairing Algo │     │Feed Display │
+│ Updates       │  │ Preferences  │     │Decision     │
+└─────────────┘    └─────────────┘     └─────────────┘
 ```
 
-1. User adds a friend in the FindFriendsScreen
-2. `userService.updateConnection` handles the update
-3. Mutual connection is created in Firestore for both users
-4. UI updates to show the friend as added
-5. Pairing algorithm will prioritize friend connections when creating daily pairings
+The friend connection system works through two complementary components:
 
-### 4. Empty State System
+1. **AddFriends Component** (`src/components/social/AddFriends.tsx`):
+   - Serves as an empty state display in the feed when a user has fewer than 5 friends
+   - Shows the current friend count: "X/5 friends"
+   - Provides a simple "Add Friends" action button
+   - When clicked, navigates to the FindFriendsScreen
+
+2. **FindFriendsScreen** (`src/screens/Feed/FindFriendsScreen.tsx`):
+   - Full-featured screen for discovering and connecting with other users
+   - Includes search functionality to find specific users
+   - Shows connection status (Added/Add) for each user
+   - Provides detailed user information
+   - Implements the actual connection functionality through `userService.updateConnection`
+
+When a user has fewer than 5 friends, the app will:
+1. Display the `AddFriends` component on the feed page showing the current count
+2. Upon clicking "Add Friends", navigate to the `FindFriendsScreen`
+3. The user can search and add connections through this screen
+4. Once they have 5 or more friends, the feed will start showing pairings (or an alternative empty state if no completed pairings exist yet)
+
+This dual-component approach separates the empty state UI from the functional friend discovery system, allowing for better modularity while maintaining a consistent user flow.
+
+### 4. Logging System Flow
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  App Code   │────▶│  logger.ts  │────▶│ Console/Log │
+│  (Any File) │     │  Utility    │     │  Service    │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ Environment │
+                    │   Checks    │
+                    └─────────────┘
+```
+
+1. Application code logs events using the centralized logger utility
+2. Logger applies environment-aware behavior (suppressing debug logs in production)
+3. Messages are formatted with consistent prefixes ([DEBUG], [INFO], etc.)
+4. In the future, this could be extended to log to external services
+
+### 5. Empty State System
 
 The app uses a conditional rendering approach for empty states:
 
@@ -215,6 +260,15 @@ The app uses a bidirectional friend connection model:
 - The pairing algorithm prioritizes matching users with their friends when possible
 - Users need at least 5 friends to be eligible for daily pairing
 
+### 6. Canonical Source Pattern
+
+The app now follows a canonical source pattern for utilities and types:
+
+- **Single Source of Truth**: Each utility function or type has one canonical location
+- **Re-exporting for Compatibility**: Legacy files now re-export from canonical sources
+- **Clear Deprecation Marking**: Deprecated paths are marked with JSDoc comments
+- **Consistent Import Style**: All components use a consistent import approach
+
 ## State Management
 
 ### 1. Authentication State
@@ -238,9 +292,10 @@ The app uses a bidirectional friend connection model:
 ## Error Handling Strategy
 
 1. **UI Level**: Friendly error messages using notification components
-2. **Service Level**: Consistent error handling with try/catch
+2. **Service Level**: Consistent error handling with try/catch and centralized logger
 3. **Network Errors**: Handled gracefully with retry mechanisms
 4. **Authentication Errors**: Redirect to auth flow when needed
+5. **Centralized Logging**: All errors are logged through a unified logger utility
 
 ## Performance Considerations
 
@@ -249,6 +304,7 @@ The app uses a bidirectional friend connection model:
 3. **Pagination**: Feed uses pagination to limit data transfer
 4. **Caching**: Important data is cached for offline access
 5. **Lazy Loading**: Components and screens implement lazy loading where appropriate
+6. **Code Organization**: Clear module boundaries and minimal dependencies between components
 
 ## Security Architecture
 
@@ -264,9 +320,65 @@ The app uses a bidirectional friend connection model:
 3. **Integration Testing**: Key flows are tested from end to end
 4. **Firebase Emulator**: Local development and testing use Firebase emulator
 
-## Future Architecture Improvements
+## Recent Architectural Improvements
 
-1. **State Management**: Consider using Redux for more complex state management if needed
-2. **Code Splitting**: Optimize bundle size for better performance
-3. **Offline Support**: Enhance offline capabilities with better caching strategies
-4. **Analytics Integration**: Add comprehensive analytics for user behaviors
+### 1. Code Cleanup and Consolidation
+
+The app has undergone systematic code cleanup to reduce duplication and improve maintainability:
+
+1. **Camera Utilities Consolidation**:
+   - Established `src/utils/camera/cameraUtils.ts` as the canonical source for camera utilities
+   - Updated legacy utility file (`src/utils/cameraUtils.ts`) to re-export from the canonical source
+   - Ensured all components import from the appropriate source
+
+2. **Type Definition Consistency**:
+   - Consolidated the `SubmitPhotoParams` interface in `src/types/pairing.ts`
+   - Added deprecation notes to guide developers to use the canonical types
+   - Ensured type re-exports follow a consistent pattern
+
+3. **Standardized Logger Implementation**:
+   - Implemented a centralized logging utility in `src/utils/logger.ts`
+   - Provided environment-aware behavior (suppressing debug logs in production)
+   - Added support for different log levels (debug, info, warn, error)
+   - Standardized log formatting for easier debugging
+
+4. **Consistent Import Structure**:
+   - Removed deprecated hook usage (e.g., `useAuth` from hooks directory)
+   - Updated all components to use direct imports from context providers
+   - Standardized service method calls across components
+
+### 2. Component Refactoring
+
+Several components have been refactored to improve reusability and maintainability:
+
+1. **PhotoPreviewScreen Refactoring**:
+   - Now uses the reusable `CameraPreview` component
+   - Maintains consistency with the `CameraScreen` implementation
+   - Improves code reuse and reduces duplication
+
+2. **CommentInput Improvement**:
+   - Updated to use the correct parameters for the `addCommentToPairing` function
+   - Fixed error handling with the new logger utility
+
+### 3. Future Architecture Considerations
+
+As the application continues to evolve, the following architectural improvements should be considered:
+
+1. **Camera Context Provider**: Create a dedicated context for camera state management
+2. **Image Processing Pipeline**: Build a standardized pipeline for image processing and uploads
+3. **Service Layer Consistency**: Ensure all Firebase interactions use the facade pattern consistently
+4. **Navigation Type Safety**: Strengthen the typing of navigation parameters throughout the app
+5. **Context Decomposition**: Consider splitting large contexts into smaller, more focused ones
+
+These improvements will further enhance maintainability, reduce duplication, and ensure a consistent user experience throughout the app.
+
+### 4. Component Relationship Clarification
+
+- Clarified the relationship between `AddFriends.tsx` and `FindFriendsScreen.tsx`
+- Ensured proper functionality when users have enough friends but no pairings yet
+- Added explicit prop `hasEnoughFriends` to `EmptyFeed` component to control which empty state to show
+
+### 5. Enhanced User Experience
+
+- Restored randomized greeting messages in the `DailyPairingScreen`
+- Improved empty state logic to properly distinguish between "not enough friends" and "no pairings yet"

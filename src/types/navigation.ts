@@ -21,10 +21,17 @@ export type MainStackParamList = {
   };
   PairingDetail: { pairingId: string };
   Pairing: undefined;
-  Chat: { chatId: string; pairingId: string };
+  Chat: { chatId: string; pairingId?: string };
   FindFriends: undefined;
   Settings: undefined;
   BlockedUsers: undefined;
+  ViewSelfies: { pairingId?: string };
+  DailyPairing: undefined;
+  EditProfile: undefined;
+  Notifications: undefined;
+  Privacy: undefined;
+  Help: undefined;
+  About: undefined;
 };
 
 export type RootStackParamList = {

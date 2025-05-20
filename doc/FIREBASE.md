@@ -11,6 +11,21 @@ The app uses the following Firebase services:
 - **Storage**: Image storage for user photos
 - **Cloud Functions**: Server-side logic for pairing and notifications
 
+## Firebase Integration Architecture
+
+The app follows a structured approach to Firebase integration:
+
+1. **Initialization**: Firebase is initialized in `src/config/firebaseInit.ts`
+2. **Configuration**: Firebase configuration is stored in `src/config/firebase.ts` (re-exports from firebaseInit)
+3. **Service Facade**: Firebase service methods are centralized in `src/services/firebase.ts`
+4. **Specialized Services**: Domain-specific Firebase interactions are handled by specialized services:
+   - `authService.ts`: Authentication-related operations
+   - `pairingService.ts`: Pairing-related operations
+   - `userService.ts`: User profile operations
+   - `storageService.ts`: File storage operations
+   - `feedService.ts`: Feed-related operations
+5. **Error Handling**: All Firebase operations use try/catch with the centralized logger utility
+
 ## Database Schema
 
 ### Collections Overview
@@ -285,7 +300,16 @@ Sends reminders for pending pairings.
 
 ## Firebase Service Implementation
 
-The app's `firebase.ts` service provides methods for interacting with Firebase:
+The app's `firebase.ts` service provides methods for interacting with Firebase. Recent improvements have optimized and standardized these implementations:
+
+### Core Services Architecture
+
+The Firebase services follow a layered approach:
+
+1. **firebase.ts**: Central facade with standardized method signatures and error handling
+2. **Specialized Services**: Domain-specific implementations with typed parameters
+3. **Consistent Error Handling**: All services use the centralized logger utility
+4. **Type Safety**: All service methods use well-defined types from the types directory
 
 ### Core Methods
 
@@ -331,6 +355,8 @@ toggleLikePairing(pairingId: string, userId: string): Promise<void>
 addCommentToPairing(
   pairingId: string,
   userId: string,
+  username: string,
+  userPhotoURL: string,
   text: string
 ): Promise<Comment>
 sendPairingReminder(
@@ -347,6 +373,55 @@ updateUserNotificationSettings(
 ): Promise<void>
 blockUser(userId: string, blockedUserId: string): Promise<void>
 unblockUser(userId: string, blockedUserId: string): Promise<void>
+```
+
+### Standardized Error Handling
+
+All Firebase service methods now use the centralized logger utility for consistent error handling:
+
+```typescript
+import logger from '../utils/logger';
+
+// Example implementation with standardized error handling
+export const getUserById = async (userId: string): Promise<User | null> => {
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    
+    if (!userDoc.exists()) {
+      logger.warn(`User not found: ${userId}`);
+      return null;
+    }
+    
+    return { id: userDoc.id, ...userDoc.data() } as User;
+  } catch (error) {
+    logger.error(`Failed to get user: ${userId}`, error);
+    throw error;
+  }
+};
+```
+
+### Type-Safe Implementations
+
+All Firebase service methods now use consistent parameter types:
+
+```typescript
+// Import from canonical type source
+import { SubmitPhotoParams } from '../types/pairing';
+
+// Type-safe implementation
+export const submitPairingPhoto = async ({
+  pairingId,
+  userId,
+  photoURL,
+  isPrivate = false
+}: SubmitPhotoParams): Promise<void> => {
+  try {
+    // Implementation details...
+  } catch (error) {
+    logger.error(`Failed to submit pairing photo: ${pairingId}`, error);
+    throw error;
+  }
+};
 ```
 
 ## Test Data Setup
@@ -430,7 +505,7 @@ The app uses Firebase Storage for user images with the following structure:
 firebase-storage
 ├── profile_images/         # User profile photos
 │   └── {userId}.jpg        # User profile image
-└── pairing_photos/         # Pairing photos
+└── pairing_photos/         # Photos for pairings
     └── {pairingId}/        # Photos for a specific pairing
         ├── {userId}_front.jpg  # Front camera photo
         └── selfie.jpg          # Combined selfie (if applicable)
@@ -505,6 +580,42 @@ Create the following indexes for efficient queries:
 3. **Collection**: `globalFeed`
    - **Fields**: `date` (desc)
    - **Query Scope**: Collection
+
+## Recent Firebase Implementation Improvements
+
+### 1. Firebase Configuration Consolidation
+
+The Firebase configuration has been consolidated and streamlined:
+
+1. **Single Initialization Point**: Firebase is now initialized only in `src/config/firebaseInit.ts`
+2. **Re-export Pattern**: `src/config/firebase.ts` now re-exports from the initialization file
+3. **Robust Error Handling**: Initialization includes comprehensive error handling with fallbacks
+
+### 2. Service Method Signature Standardization
+
+Service methods have been standardized for consistency:
+
+1. **Consistent Parameter Types**: Methods with similar purposes use consistent parameter types
+2. **Return Type Standardization**: Methods with similar purposes return consistently structured data
+3. **Type-Safe Parameters**: All methods use well-defined TypeScript interfaces
+
+### 3. Error Handling Improvements
+
+Error handling has been improved for better reliability:
+
+1. **Centralized Logger Usage**: All Firebase service methods now use the centralized logger
+2. **Consistent Try/Catch Pattern**: All asynchronous operations use a consistent try/catch pattern
+3. **Detailed Error Messages**: Error messages now include relevant context (document IDs, etc.)
+4. **Environment-Aware Logging**: Log level is adjusted based on the environment (development/production)
+
+### 4. Performance Optimizations
+
+Several performance optimizations have been implemented:
+
+1. **Batch Operations**: Related updates are grouped into batch operations for atomic updates
+2. **Query Limiting**: All list operations include limits to prevent excessive data transfer
+3. **Field Selection**: Queries now specify only needed fields when possible
+4. **Index Optimization**: Queries are designed to use existing indexes effectively
 
 ## Performance Considerations
 

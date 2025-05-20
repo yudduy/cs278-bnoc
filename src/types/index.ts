@@ -380,11 +380,13 @@ export type TabParamList = {
 
 /**
  * Submit photo parameters
+ * @deprecated Import from './pairing' instead
  */
 export interface SubmitPhotoParams {
   photoURL: string;
   isPrivate: boolean;
 }
 
-// Export auth types
+// Export auth and pairing types
 export * from './auth';
+export * from './pairing';

@@ -67,7 +67,7 @@ const usersToCreate = [
   },
   {
     id: 'user3',
-    email: 'kelvin@stanford.edu',
+    email: 'kelvinknguyen@stanford.edu',
     password: 'seaside123',
     username: 'kelvin',
     displayName: 'Kelvin Nguyen',
@@ -143,7 +143,7 @@ const usersToCreate = [
   {
     id: 'user6',
     email: 'lebron@stanford.edu',
-    password: 'michaelshanks123',
+    password: 'ilovelebron',
     username: 'lebron',
     displayName: 'Lebron James',
     photoURL: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Flebron.png?alt=media&token=c723d590-4e65-4913-ac0e-9f4e043c6ce8',

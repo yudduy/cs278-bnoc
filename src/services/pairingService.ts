@@ -8,6 +8,7 @@ import { db, storage } from '../config/firebase';
 import { getUserById } from './userService';
 import * as feedService from './feedService';
 import * as notificationService from './notificationService';
+import logger from '../utils/logger';
 
 /**
  * Get current pairing for a user
@@ -15,7 +16,7 @@ import * as notificationService from './notificationService';
 export const getCurrentPairing = async (userId: string): Promise<Pairing | null> => {
   try {
     if (!userId) {
-      console.error('getCurrentPairing called without a valid userId');
+      logger.error('getCurrentPairing called without a valid userId');
       return null;
     }
 
@@ -23,7 +24,7 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    console.log(`Getting current pairing for user ${userId} after ${today.toISOString()}`);
+    logger.debug(`Getting current pairing for user ${userId} after ${today.toISOString()}`);
     
     // Query pairings for today where the user is included in the users array
     const pairingsQuery = query(
@@ -38,7 +39,7 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     
     // If no pairings found, return null
     if (snapshot.empty) {
-      console.log(`No active pairing found for user ${userId}`);
+      logger.info(`No active pairing found for user ${userId}`);
       return null;
     }
     
@@ -48,19 +49,19 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     
     // Validate that the pairing data has the required fields
     if (!pairingData || !pairingData.users || !Array.isArray(pairingData.users)) {
-      console.error(`Invalid pairing data for pairing ${pairingDoc.id}:`, pairingData);
+      logger.error(`Invalid pairing data for pairing ${pairingDoc.id}:`, pairingData);
       return null;
     }
     
     // Additional validation to ensure the user is part of this pairing
     if (!pairingData.users.includes(userId)) {
-      console.error(`User ${userId} not found in pairing ${pairingDoc.id} users array:`, pairingData.users);
+      logger.error(`User ${userId} not found in pairing ${pairingDoc.id} users array:`, pairingData.users);
       return null;
     }
     
     // Ensure user is properly assigned as either user1 or user2
     if (pairingData.user1_id !== userId && pairingData.user2_id !== userId) {
-      console.error(`User ${userId} found in users array but not assigned as user1_id or user2_id in pairing ${pairingDoc.id}`);
+      logger.error(`User ${userId} found in users array but not assigned as user1_id or user2_id in pairing ${pairingDoc.id}`);
       return null;
     }
     
@@ -70,7 +71,7 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
       ...pairingData
     } as Pairing;
   } catch (error) {
-    console.error('Error getting current pairing:', error);
+    logger.error('Error getting current pairing:', error);
     return null;
   }
 };
@@ -81,7 +82,7 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
 export const getPairingById = async (pairingId: string): Promise<Pairing | null> => {
   try {
     if (!pairingId) {
-      console.error('getPairingById called without pairingId');
+      logger.error('getPairingById called without pairingId');
       return null;
     }
     
@@ -89,7 +90,7 @@ export const getPairingById = async (pairingId: string): Promise<Pairing | null>
     const pairingDoc = await getDoc(pairingRef);
     
     if (!pairingDoc.exists()) {
-      console.log(`No pairing found with ID ${pairingId}`);
+      logger.info(`No pairing found with ID ${pairingId}`);
       return null;
     }
     
@@ -98,7 +99,7 @@ export const getPairingById = async (pairingId: string): Promise<Pairing | null>
       ...pairingDoc.data()
     } as Pairing;
   } catch (error) {
-    console.error(`Error getting pairing ${pairingId}:`, error);
+    logger.error(`Error getting pairing ${pairingId}:`, error);
     return null;
   }
 };
@@ -109,7 +110,7 @@ export const getPairingById = async (pairingId: string): Promise<Pairing | null>
 export const getUserPairingHistory = async (userId: string, limitCount: number = 10): Promise<Pairing[]> => {
   try {
     if (!userId) {
-      console.error('getUserPairingHistory called without userId');
+      logger.error('getUserPairingHistory called without userId');
       return [];
     }
     
@@ -130,7 +131,7 @@ export const getUserPairingHistory = async (userId: string, limitCount: number =
       ...doc.data()
     } as Pairing));
   } catch (error) {
-    console.error('Error getting user pairing history:', error);
+    logger.error('Error getting user pairing history:', error);
     return [];
   }
 };
@@ -179,7 +180,7 @@ export const getRecentPairingsFeed = async (
       // Validate users field
       const usersArray = pairingData.users;
       if (!Array.isArray(usersArray) || usersArray.length !== 2 || !usersArray.every(u => typeof u === 'string')) {
-        console.warn(`Pairing ${docData.id} has malformed 'users' field:`, usersArray);
+        logger.warn(`Pairing ${docData.id} has malformed 'users' field:`, usersArray);
         return null; // Skip this pairing
       }
       const validUsersTuple = usersArray as [string, string];
@@ -189,7 +190,7 @@ export const getRecentPairingsFeed = async (
       const user2_id = pairingData.user2_id as string;
       const chatId = pairingData.chatId as string;
       if (!user1_id || !user2_id) {
-        console.warn(`Pairing ${docData.id} is missing user1_id or user2_id.`);
+        logger.warn(`Pairing ${docData.id} is missing user1_id or user2_id.`);
         return null;
       }
 
@@ -249,7 +250,7 @@ export const getRecentPairingsFeed = async (
     const feedItems = resolvedItems.filter((item: PairingFeedItem | null): item is PairingFeedItem => item !== null);
     return feedItems;
   } catch (error) {
-    console.error('Error getting recent pairings feed:', error);
+    logger.error('Error getting recent pairings feed:', error);
     return [];
   }
 };
@@ -266,7 +267,7 @@ export const completePairing = async (
   backImage: string,
   isPrivate: boolean
 ): Promise<void> => {
-  console.warn("DEPRECATED: completePairing is called. Review for new single camera flow.");
+  logger.warn("DEPRECATED: completePairing is called. Review for new single camera flow.");
   try {
     // Check if user is part of this pairing
     const pairingDoc = await getDoc(doc(db, 'pairings', pairingId));
@@ -345,7 +346,7 @@ export const completePairing = async (
       }
     }
   } catch (error) {
-    console.error('Error in deprecated completePairing:', error);
+    logger.error('Error in deprecated completePairing:', error);
     throw error;
   }
 };
@@ -406,12 +407,12 @@ export const updatePairingWithPhoto = async (
       
     // If this submission completes the pairing
     if (user1Submitted && user2Submitted) {
-      console.log(`Both users have submitted photos for pairing ${pairingId}. Marking as completed.`);
+      logger.info(`Both users have submitted photos for pairing ${pairingId}. Marking as completed.`);
       updateData.status = 'completed';
       updateData.completedAt = Timestamp.now();
     } else {
       updateData.status = newStatus;
-      console.log(`User ${userId} submitted photo for pairing ${pairingId}. Status: ${newStatus}`);
+      logger.info(`User ${userId} submitted photo for pairing ${pairingId}. Status: ${newStatus}`);
     }
 
     await updateDoc(pairingRef, updateData);
@@ -463,7 +464,7 @@ export const updatePairingWithPhoto = async (
           }
         }
       } catch (error) {
-        console.error(`Error publishing completed pairing ${pairingId} to feed:`, error);
+        logger.error(`Error publishing completed pairing ${pairingId} to feed:`, error);
         // Don't throw here - the pairing was successfully updated, so we just log the error
       }
     } else if (updateData.status === 'user1_submitted' || updateData.status === 'user2_submitted') {
@@ -486,12 +487,12 @@ export const updatePairingWithPhoto = async (
             userId
           );
         } catch (notificationError) {
-          console.error('Error sending submission notification:', notificationError);
+          logger.error('Error sending submission notification:', notificationError);
         }
       }
     }
   } catch (error) {
-    console.error(`Error updating pairing ${pairingId} with photo:`, error);
+    logger.error(`Error updating pairing ${pairingId} with photo:`, error);
     throw error;
   }
 };
@@ -499,44 +500,75 @@ export const updatePairingWithPhoto = async (
 /**
  * Toggle like on a pairing
  */
-export const toggleLikePairing = async (pairingId: string, userId: string): Promise<void> => {
+export const toggleLikePairing = async (pairingId: string, userId: string): Promise<boolean> => {
+  if (!pairingId || !userId) {
+    logger.error('toggleLikePairing called with invalid parameters', { pairingId, userId });
+    throw new Error('Invalid parameters for toggleLikePairing: pairingId and userId are required');
+  }
+
   try {
     const pairingRef = doc(db, 'pairings', pairingId);
     const pairingDoc = await getDoc(pairingRef);
     
-    if (!pairingDoc.exists()) throw new Error('Pairing not found');
+    if (!pairingDoc.exists()) {
+      logger.warn(`toggleLikePairing: Pairing not found with ID ${pairingId}`);
+      throw new Error(`Pairing not found with ID ${pairingId}`);
+    }
     
     const pairingData = pairingDoc.data();
-    if (!pairingData) throw new Error('Pairing data not found');
-    const likedBy = pairingData.likedBy || [];
+    if (!pairingData) {
+      logger.warn(`toggleLikePairing: Pairing data is empty for ID ${pairingId}`);
+      throw new Error('Pairing data not found');
+    }
     
+    const likedBy = pairingData.likedBy || [];
     let newLikesCount = pairingData.likesCount || 0;
+    let isLiked = false;
+    
+    // Use a batch operation for atomic updates
+    const batch = writeBatch(db);
     
     if (likedBy.includes(userId)) {
       // Remove like
       const updatedLikedBy = likedBy.filter((id: string) => id !== userId);
       newLikesCount = Math.max(0, newLikesCount - 1);
-      await updateDoc(pairingRef, {
+      batch.update(pairingRef, {
         likedBy: updatedLikedBy,
         likesCount: newLikesCount
       });
+      isLiked = false;
+      logger.debug(`User ${userId} removed like from pairing ${pairingId}`);
     } else {
       // Add like
       const updatedLikedBy = [...likedBy, userId];
       newLikesCount += 1;
-      await updateDoc(pairingRef, {
+      batch.update(pairingRef, {
         likedBy: updatedLikedBy,
         likesCount: newLikesCount
       });
+      isLiked = true;
+      logger.debug(`User ${userId} liked pairing ${pairingId}`);
     }
+    
+    // Commit the batch
+    await batch.commit();
+    
+    return isLiked;
   } catch (error) {
-    console.error('Error toggling like:', error);
+    logger.error(`Error toggling like for pairing ${pairingId} by user ${userId}:`, error);
     throw error;
   }
 };
 
 /**
  * Add comment to a pairing
+ * @param pairingId - ID of the pairing to comment on
+ * @param userId - ID of the user making the comment
+ * @param username - Username of the commenter
+ * @param userPhotoURL - Profile photo URL of the commenter
+ * @param text - Text content of the comment
+ * @returns Promise resolving to the created Comment object
+ * @throws Error if parameters are invalid or comment creation fails
  */
 export const addCommentToPairing = async (
   pairingId: string,
@@ -545,29 +577,65 @@ export const addCommentToPairing = async (
   userPhotoURL: string,
   text: string
 ): Promise<Comment> => {
+  // Validate parameters
+  if (!pairingId || !userId) {
+    logger.error('addCommentToPairing called with invalid parameters', { pairingId, userId });
+    throw new Error('Invalid parameters for addCommentToPairing: pairingId and userId are required');
+  }
+  
+  if (!text || text.trim().length === 0) {
+    logger.warn('addCommentToPairing called with empty comment text', { pairingId, userId });
+    throw new Error('Comment text cannot be empty');
+  }
+  
   try {
-    const commentData: Omit<Comment, 'id' | 'createdAt'> & { createdAt: Timestamp } = {
+    // Check if pairing exists first
+    const pairingRef = doc(db, 'pairings', pairingId);
+    const pairingDoc = await getDoc(pairingRef);
+    
+    if (!pairingDoc.exists()) {
+      logger.warn(`addCommentToPairing: Pairing not found with ID ${pairingId}`);
+      throw new Error(`Pairing not found with ID ${pairingId}`);
+    }
+    
+    const pairingData = pairingDoc.data();
+    
+    // Create comment data with proper typing
+    const commentData: Omit<Comment, 'id'> = {
       userId,
-      text,
-      username,
-      userPhotoURL,
+      text: text.trim(),
+      username: username || 'User', // Provide fallback
+      userPhotoURL: userPhotoURL || '', // Provide fallback
       createdAt: Timestamp.now(),
     };
     
-    // Add to the comments subcollection, Firestore will generate ID
-    const commentRef = await addDoc(collection(db, `pairings/${pairingId}/comments`), commentData);
+    logger.debug(`Adding comment to pairing ${pairingId} by user ${userId}`);
     
-    const pairingRef = doc(db, 'pairings', pairingId);
-    await updateDoc(pairingRef, {
+    // Use a batch operation for atomic updates
+    const batch = writeBatch(db);
+    
+    // Add to the comments subcollection
+    const commentsCollectionRef = collection(db, `pairings/${pairingId}/comments`);
+    const newCommentRef = doc(commentsCollectionRef);
+    batch.set(newCommentRef, commentData);
+    
+    // Update the comment count on the pairing document
+    batch.update(pairingRef, {
       commentsCount: increment(1)
     });
     
+    // Commit the batch
+    await batch.commit();
+    
+    logger.info(`Comment added successfully to pairing ${pairingId}`);
+    
+    // Return the created comment with its ID
     return {
-      id: commentRef.id, // Get the auto-generated ID
+      id: newCommentRef.id,
       ...commentData
-    } as Comment;
+    };
   } catch (error) {
-    console.error('Error adding comment:', error);
+    logger.error(`Error adding comment to pairing ${pairingId} by user ${userId}:`, error);
     throw error;
   }
 };
@@ -597,7 +665,7 @@ export const updatePairingPrivacy = async (
       isPrivate
     });
   } catch (error) {
-    console.error('Error updating pairing privacy:', error);
+    logger.error('Error updating pairing privacy:', error);
     throw error;
   }
 };
@@ -608,7 +676,7 @@ export const updatePairingPrivacy = async (
 export const getUserStats = async (userId: string): Promise<any> => {
   try {
     if (!userId) {
-      console.error('getUserStats called without userId');
+      logger.error('getUserStats called without userId');
       return {};
     }
     
@@ -638,7 +706,7 @@ export const getUserStats = async (userId: string): Promise<any> => {
       flakedPairings: flakedSnapshot.size
     };
   } catch (error) {
-    console.error('Error getting user stats:', error);
+    logger.error('Error getting user stats:', error);
     return {
       totalPairings: 0,
       flakedPairings: 0
@@ -650,6 +718,6 @@ export const getUserStats = async (userId: string): Promise<any> => {
  * Apply snooze token to skip a pairing
  */
 export const applySnoozeToken = async (userId: string, pairingId: string): Promise<boolean> => {
-  console.log('Applying snooze token for user:', userId, 'to pairing:', pairingId);
+  logger.info('Applying snooze token for user:', userId, 'to pairing:', pairingId);
   return true;
 };

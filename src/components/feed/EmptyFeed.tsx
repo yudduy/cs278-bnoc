@@ -16,20 +16,24 @@ interface EmptyFeedProps {
   minFriendsRequired: number;
   onAddFriends: () => void;
   onTakePhoto: () => void;
+  hasEnoughFriends?: boolean; // New optional prop to explicitly control which state to show
 }
 
 const EmptyFeed: React.FC<EmptyFeedProps> = ({
   friendCount,
   minFriendsRequired,
   onAddFriends,
-  onTakePhoto
+  onTakePhoto,
+  hasEnoughFriends
 }) => {
-  const needsMoreFriends = friendCount < minFriendsRequired;
+  // If hasEnoughFriends is explicitly passed, use it. Otherwise calculate based on friendCount
+  const needsMoreFriends = hasEnoughFriends === undefined 
+    ? friendCount < minFriendsRequired
+    : !hasEnoughFriends;
   
   if (needsMoreFriends) {
     return (
       <View style={styles.container}>
-        <Text style={styles.logo}>BNOC</Text>
         <Ionicons name="people-outline" size={64} color={COLORS.primary} />
         <Text style={styles.title}>Add at least 5 friends</Text>
         <Text style={styles.title}>to get started!</Text>
@@ -39,6 +43,9 @@ const EmptyFeed: React.FC<EmptyFeedProps> = ({
         >
           <Text style={styles.addFriendsButtonText}>Add Friends</Text>
         </TouchableOpacity>
+        <Text style={styles.friendCountText}>
+          {friendCount}/{minFriendsRequired} friends
+        </Text>
       </View>
     );
   }
@@ -46,7 +53,7 @@ const EmptyFeed: React.FC<EmptyFeedProps> = ({
   return (
     <View style={styles.container}>
       <Ionicons name="camera-outline" size={64} color={COLORS.textSecondary} />
-      <Text style={styles.title}>No Selfies Yet</Text>
+      <Text style={styles.title}>No Recent Posts :(</Text>
       <Text style={styles.text}>
         Completed pairings will appear here. Take a selfie with your daily partner to see it in the feed!
       </Text>
@@ -69,17 +76,10 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: COLORS.background,
   },
-  logo: {
-    fontFamily: FONTS.bold,
-    fontSize: 20,
-    color: COLORS.primary,
-    marginBottom: 16,
-    letterSpacing: 1,
-  },
   title: {
     fontFamily: FONTS.bold,
     fontSize: 22,
-    color: COLORS.primary,
+    color: COLORS.text,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -105,6 +105,13 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bold,
     fontSize: 16,
     color: COLORS.background,
+  },
+  friendCountText: {
+    fontFamily: FONTS.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    marginTop: 12,
+    textAlign: 'center',
   },
   cameraButton: {
     backgroundColor: COLORS.textSecondary,

@@ -2,6 +2,7 @@ import firebaseApp from '../config/firebase'; // Changed to default import
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 import * as ImageManipulator from 'expo-image-manipulator';
+import logger from '../utils/logger';
 
 const storage = getStorage(firebaseApp);
 
@@ -50,7 +51,7 @@ export const compressImage = async (
       }
     );
     
-    console.log('Image compressed successfully', {
+    logger.debug('Image compressed successfully', {
       originalUri: imageUri,
       compressedUri: result.uri,
       width: result.width,
@@ -248,7 +249,7 @@ export const deleteImage = async (url: string): Promise<void> => {
     
     // Delete the file
     await deleteObject(imageRef);
-    console.log('Image deleted successfully');
+    logger.info('Image deleted successfully');
   } catch (error) {
     console.error('Error deleting image:', error);
     throw error;

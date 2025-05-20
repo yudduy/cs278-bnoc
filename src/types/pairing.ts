@@ -50,6 +50,7 @@ export interface SubmitPhotoParams {
   pairingId: string;
   userId: string;
   photoURL: string;
+  isPrivate?: boolean;
 }
 
 export interface PairingStats {

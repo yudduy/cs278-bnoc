@@ -18,7 +18,7 @@ import {
   Share,
   Animated,
   StatusBar,
-  Alert // Added Alert
+  Alert
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,7 +31,11 @@ import { useAuth } from '../../context/AuthContext';
 import { usePairing } from '../../context/PairingContext';
 import firebaseService from '../../services/firebase';
 import { RouteProp } from '@react-navigation/native';
-import { MainTabParamList } from '../../types/navigation';
+import { MainTabParamList, MainStackParamList } from '../../types/navigation';
+import { StackNavigationProp } from '@react-navigation/stack';
+
+// Define typed navigation prop
+type FeedScreenNavigationProp = StackNavigationProp<MainStackParamList>;
 
 // Default avatar image fallback
 const defaultAvatar = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
@@ -54,7 +58,7 @@ const FeedScreen: React.FC = () => {
   // Get auth context
   const { user } = useAuth();
   const { currentPairing, loadCurrentPairing } = usePairing();
-  const navigation = useNavigation();
+  const navigation = useNavigation<FeedScreenNavigationProp>();
   const route = useRoute<RouteProp<MainTabParamList, 'Feed'>>();
   const scrollToPairingId = route.params?.scrollToPairingId;
 
@@ -70,6 +74,22 @@ const FeedScreen: React.FC = () => {
     }
     return false;
   }, [currentPairing, user]);
+  
+  // ADDED: Check if the pairing has expired
+  const isPairingExpired = React.useMemo(() => {
+    if (!currentPairing || !currentPairing.expiresAt) return true;
+    
+    let expiryDate: Date;
+    // Handle Firestore Timestamp conversion to Date
+    if (currentPairing.expiresAt && typeof currentPairing.expiresAt.toDate === 'function') {
+      expiryDate = currentPairing.expiresAt.toDate();
+    } else {
+      // Handle case where it might already be a Date or a timestamp number
+      expiryDate = new Date(currentPairing.expiresAt as any);
+    }
+    
+    return new Date() > expiryDate;
+  }, [currentPairing]);
 
   /**
    * Load feed data from Firebase
@@ -223,20 +243,23 @@ const FeedScreen: React.FC = () => {
   };
   
   /**
-   * Navigate to camera screen with today's pairing
+   * Navigate to camera screen
    */
   const navigateToCamera = () => {
-    navigation.navigate('Camera' as never);
+    navigation.navigate('Camera');
   };
 
+  /**
+   * Navigate to camera screen for taking/retaking a pairing photo
+   */
   const navigateToCameraForPairing = () => {
     if (currentPairing && user) {
       const navigateAction = () => {
         navigation.navigate('Camera', { 
           pairingId: currentPairing.id,
           userId: user.id,
-          submissionType: 'pairing', 
-        } as never);
+          submissionType: 'pairing'
+        });
       };
 
       if (hasUserSubmittedPhoto) {
@@ -257,17 +280,24 @@ const FeedScreen: React.FC = () => {
   };
   
   /**
+   * Navigate to daily pairing screen
+   */
+  const navigateToDailyPairing = () => {
+    navigation.navigate('DailyPairing');
+  };
+  
+  /**
    * Navigate to profile screen
    */
   const navigateToProfile = () => {
-    navigation.navigate('Profile' as never);
+    navigation.navigate('Profile');
   };
   
   /**
    * Navigate to friends list screen
    */
   const navigateToFriendsList = () => {
-    navigation.navigate('FindFriends' as never);
+    navigation.navigate('FindFriends');
   };
   
   /**
@@ -364,14 +394,29 @@ const FeedScreen: React.FC = () => {
     const friendCount = user?.connections?.length || 0;
     const minFriendsRequired = 5;
     
-    return (
-      <EmptyFeed
-        friendCount={friendCount}
-        minFriendsRequired={minFriendsRequired}
-        onAddFriends={navigateToFriendsList}
-        onTakePhoto={navigateToCamera}
-      />
-    );
+    // If user has enough friends but no pairings yet, show "No Recent Posts" message
+    // Otherwise, show "Add Friends" message
+    if (friendCount >= minFriendsRequired) {
+      return (
+        <EmptyFeed
+          friendCount={friendCount}
+          minFriendsRequired={minFriendsRequired}
+          onAddFriends={navigateToFriendsList}
+          onTakePhoto={navigateToCamera}
+          hasEnoughFriends={true}
+        />
+      );
+    } else {
+      return (
+        <EmptyFeed
+          friendCount={friendCount}
+          minFriendsRequired={minFriendsRequired}
+          onAddFriends={navigateToFriendsList}
+          onTakePhoto={navigateToCamera}
+          hasEnoughFriends={false}
+        />
+      );
+    }
   };
   
   /**
@@ -417,68 +462,15 @@ const FeedScreen: React.FC = () => {
   // Determine if we should show the camera FAB
   const friendCount = user?.connections?.length || 0;
   const minFriendsRequired = 5;
-  const shouldShowFab = friendCount >= minFriendsRequired && currentPairing != null;
+  const shouldShowCameraFab = friendCount >= minFriendsRequired && currentPairing != null && !hasUserSubmittedPhoto;
   
-  // ADDED: Logic for showing the pairing camera button
-  const shouldShowPairingCameraButton = React.useMemo(() => {
-    if (!currentPairing || !user) {
-      // console.log("Debug FeedScreen: No currentPairing or user for pairing camera button");
-      return false;
-    }
-
-    // user1_id and user2_id from the pairing document define who is in which "slot".
-    // A valid currentPairing for photo submission must have these fields.
-    if (!currentPairing.user1_id || !currentPairing.user2_id) {
-      console.warn("Debug FeedScreen: Current pairing is missing user1_id or user2_id", currentPairing);
-      return false;
-    }
-
-    if (user.id === currentPairing.user1_id || user.id === currentPairing.user2_id) {
-      return true;
-    }
-    
-    return false;
-  }, [currentPairing, user]);
-  
-  /**
-   * Placeholder for rendering the "Today's Pairing" section
-   * You'll need to integrate the button into your actual component/JSX for this section
-   */
-  const renderCurrentPairingSection = () => {
-    if (!currentPairing || !user) return null;
-
-    return (
-      <View style={styles.currentPairingContainer}>
-        <Text style={styles.currentPairingTitle}>Today's Pairing</Text>
-        {/* ... Your existing content for current pairing (details, Go to Chat, Back Home) ... */}
-        
-        {shouldShowPairingCameraButton && (
-          <>
-            <TouchableOpacity onPress={navigateToCameraForPairing} style={styles.pairingPhotoButton}>
-              <Ionicons name="camera-outline" size={24} color={COLORS.background} />
-              <Text style={styles.pairingPhotoButtonText}>
-                {hasUserSubmittedPhoto ? "Retake Pairing Photo" : "Take Today's Pairing Photo"}
-              </Text>
-            </TouchableOpacity>
-            {hasUserSubmittedPhoto && (
-              <Text style={styles.retakeWarningText}>
-                You've already submitted a photo. Retaking will replace it.
-              </Text>
-            )}
-          </>
-        )}
-        {/* ... Other buttons like "Go to Chat", "Back Home" ... */}
-      </View>
-    );
-  };
+  // Determine if we should show the retake photo FAB
+  const shouldShowRetakeFab = currentPairing != null && hasUserSubmittedPhoto && !isPairingExpired;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       {renderHeader()}
-
-      {/* Render the Today's Pairing section here if it's separate from the list */}
-      {currentPairing && renderCurrentPairingSection()} 
       
       {loading && pairings.length === 0 && !error ? (
         <View style={styles.loaderContainer}>
@@ -512,6 +504,28 @@ const FeedScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         />
       )}
+      
+      {/* Camera FAB - only shown if user has enough friends and no submitted photo yet */}
+      {shouldShowCameraFab && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={navigateToCameraForPairing}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="camera" size={28} color={COLORS.background} />
+        </TouchableOpacity>
+      )}
+      
+      {/* Retake Photo FAB - only shown if user has submitted a photo and pairing isn't expired */}
+      {shouldShowRetakeFab && (
+        <TouchableOpacity
+          style={[styles.fab, styles.retakeFab]}
+          onPress={navigateToDailyPairing}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="camera-outline" size={28} color={COLORS.background} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -544,35 +558,35 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: BORDER_RADIUS.md, // Used BORDER_RADIUS.md from theme
+    borderRadius: BORDER_RADIUS.md,
   },
   retryButtonText: {
-    color: COLORS.background, // Text on primary button should be contrasting (e.g. black)
+    color: COLORS.background,
     fontSize: 16,
-    fontFamily: FONTS.bold, // Used FONTS.bold from theme
+    fontFamily: FONTS.bold,
   },
   listContainer: {
-    paddingBottom: 80, // Ensure space for FAB if it's at the bottom
+    paddingBottom: 80,
   },
   emptyListContainer: {
-    flexGrow: 1, // Ensures EmptyFeed can center itself
+    flexGrow: 1,
   },
   headerContainer: {
-    backgroundColor: COLORS.background, // Match screen background
+    backgroundColor: COLORS.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingVertical: 10, // Adjust as needed
-    height: 60, // Example height
+    paddingVertical: 10,
+    height: 60,
   },
   headerButton: {
     padding: 5,
   },
   headerTitle: {
-    fontFamily: FONTS.bold, // Used FONTS.bold from theme
+    fontFamily: FONTS.bold,
     fontSize: 24,
     color: COLORS.primary,
   },
@@ -585,40 +599,26 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
   },
-  currentPairingContainer: {
-    padding: 15,
-    backgroundColor: COLORS.card, // Example background
-    margin: 10,
-    borderRadius: BORDER_RADIUS.md,
-    ...SHADOWS.medium,
-  },
-  currentPairingTitle: {
-    fontSize: 18,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-    marginBottom: 10,
-  },
-  pairingPhotoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: BORDER_RADIUS.md,
     justifyContent: 'center',
-    marginTop: 10,
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    zIndex: 1000,
   },
-  pairingPhotoButtonText: {
-    color: COLORS.background, // Changed from COLORS.white
-    fontSize: 16,
-    fontFamily: FONTS.medium,
-    marginLeft: 8,
-  },
-  retakeWarningText: { // Added style for the warning text
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 5,
+  retakeFab: {
+    bottom: 100,
+    right: 20,
   },
 });
 

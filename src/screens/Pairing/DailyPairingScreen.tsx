@@ -2,7 +2,8 @@
  * DailyPairingScreen
  * 
  * Shows users their daily pairing with another user, following the black and white theme.
- * Displays both users' profile pictures and provides options to go to chat or return home.
+ * Displays both users' profile pictures side-by-side and provides options to take a photo,
+ * open chat, or return to the feed.
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -26,7 +27,6 @@ import { usePairing } from '../../context/PairingContext';
 import { useAuth } from '../../context/AuthContext';
 import PrimaryButton from '../../components/buttons/PrimaryButton';
 import SecondaryButton from '../../components/buttons/SecondaryButton';
-import { DAILY_PAIRING_MESSAGES } from '../../config/constants';
 import firebaseService from '../../services/firebase';
 import { User } from '../../types';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -35,18 +35,40 @@ import { MainStackParamList } from '../../types/navigation';
 // Type for navigation props
 type DailyPairingNavigationProp = StackNavigationProp<MainStackParamList>;
 
+// Array of randomized greeting messages to use for daily pairings
+const GREETING_MESSAGES = [
+  "Surprise! Meet your BNOC match for today:",
+  "Ready for a new connection? Say hello to:",
+  "Today's networking opportunity is with:",
+  "Your daily BNOC challenge: Connect with:",
+  "Time to expand your network with:",
+  "Meet someone new today:",
+  "Your Stanford connection for today:",
+  "Your BNOC adventure today is with:",
+  "Today's random match is with:",
+  "Broaden your network with:",
+  "Someone new to meet today:",
+  "Get ready to connect with:",
+  "Today's meaningful connection:",
+  "Meet a new face at Stanford:",
+  "Step outside your comfort zone with:"
+];
+
 const DailyPairingScreen: React.FC = () => {
   const navigation = useNavigation<DailyPairingNavigationProp>();
   const { currentPairing, loadCurrentPairing } = usePairing();
   const { user } = useAuth();
   
-  const [welcomeMessage, setWelcomeMessage] = useState('');
   const [partner, setPartner] = useState<User | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timeUntilNextPairing, setTimeUntilNextPairing] = useState<string>('');
-  const [showNotification, setShowNotification] = useState<boolean>(false);
-  const [isFirstLoad, setIsFirstLoad] = useState<boolean>(true);
+  
+  // Get a random greeting message for this session
+  const [greetingMessage] = useState(() => {
+    const randomIndex = Math.floor(Math.random() * GREETING_MESSAGES.length);
+    return GREETING_MESSAGES[randomIndex];
+  });
   
   // Animation for the countdown pulse effect
   const pulseAnimation = useRef(new Animated.Value(1)).current;
@@ -108,10 +130,6 @@ const DailyPairingScreen: React.FC = () => {
         const partnerData = await firebaseService.getUserById(partnerId);
         setPartner(partnerData || null);
       }
-      
-      // Select new random welcome message
-      const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
-      setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -144,39 +162,17 @@ const DailyPairingScreen: React.FC = () => {
     }
   }, [currentPairing]);
 
-  // Show notification on first load if there's a new pairing
-  useEffect(() => {
-    if (isFirstLoad && currentPairing && !refreshing) {
-      setShowNotification(true);
-      setIsFirstLoad(false);
-      
-      // Hide notification after 5 seconds
-      const timeout = setTimeout(() => {
-        setShowNotification(false);
-      }, 5000);
-      
-      return () => clearTimeout(timeout);
-    }
-  }, [currentPairing, isFirstLoad, refreshing]);
-
   useEffect(() => {
     const loadScreenData = async () => {
       setLocalLoading(true);
-      if (user && !currentPairing) { // Check if currentPairing is null
+      if (user && !currentPairing) {
         await loadCurrentPairing(); 
-        // After attempting to load, currentPairing might still be null if no pairing exists
-        // or it will be populated. The subsequent useEffect for partner details will handle its part.
       }
-      // Select random welcome message
-      const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
-      setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
       
       // If there's no partnerId (derived from currentPairing), we might not need to wait for partner details.
       if (!partnerId) {
         setLocalLoading(false);
       }
-      // If currentPairing is still null after load attempt, and no partnerId, stop loading.
-      // If currentPairing is populated, partnerId will be set, and the other useEffect will manage loading.
     };
     loadScreenData();
   }, [user, currentPairing, loadCurrentPairing, partnerId]);
@@ -199,10 +195,50 @@ const DailyPairingScreen: React.FC = () => {
     getPartnerDetails();
   }, [partnerId]);
   
+  // Get submission status message
+  const getSubmissionStatusMessage = useMemo(() => {
+    if (!currentPairing) return "";
+    
+    const userSubmitted = !!currentUserPairingPhotoURL;
+    const partnerSubmitted = !!partnerPairingPhotoURL;
+    
+    if (userSubmitted && partnerSubmitted) {
+      return "You've both snapped for today!";
+    } else if (userSubmitted && !partnerSubmitted) {
+      return `Your snap is in! Waiting for ${partner?.displayName || 'your partner'}.`;
+    } else if (!userSubmitted && partnerSubmitted) {
+      return `${partner?.displayName || 'Your partner'} has snapped! Your turn.`;
+    } else {
+      return "Time to snap your daily selfies!";
+    }
+  }, [currentPairing, currentUserPairingPhotoURL, partnerPairingPhotoURL, partner]);
+  
+  // Get secondary button config based on submission status
+  const getSecondaryButtonConfig = useMemo(() => {
+    if (!currentUserPairingPhotoURL) {
+      return {
+        text: `Snap with ${partner?.displayName || 'Partner'}`,
+        action: handleTakePhoto
+      };
+    } else {
+      return {
+        text: "View/Retake Snap",
+        action: handleViewSelfies
+      };
+    }
+  }, [currentUserPairingPhotoURL, partner]);
+  
   // Navigate to camera screen
   const handleTakePhoto = () => {
     if (currentPairing) {
       navigation.navigate('Camera', { pairingId: currentPairing.id });
+    }
+  };
+  
+  // Navigate to view/retake selfies screen
+  const handleViewSelfies = () => {
+    if (currentPairing) {
+      navigation.navigate('ViewSelfies', { pairingId: currentPairing.id });
     }
   };
   
@@ -222,16 +258,6 @@ const DailyPairingScreen: React.FC = () => {
       screen: 'Feed',
       params: { refresh: true }
     });
-  };
-
-  // View partner profile
-  const handleViewProfile = () => {
-    if (partnerId) {
-      navigation.navigate('TabNavigator', {
-        screen: 'Profile',
-        params: { userId: partnerId }
-      });
-    }
   };
   
   if (localLoading) {
@@ -277,14 +303,6 @@ const DailyPairingScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       
-      {/* New Pairing Notification */}
-      {showNotification && (
-        <View style={styles.notification}>
-          <Ionicons name="person-outline" size={20} color={COLORS.background} />
-          <Text style={styles.notificationText}>Check out your match for today!</Text>
-        </View>
-      )}
-      
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -296,93 +314,77 @@ const DailyPairingScreen: React.FC = () => {
         }
       >
         <View style={styles.content}>
-          <Text style={styles.welcomeMessage}>{welcomeMessage}</Text>
+          {/* Random Greeting Message */}
+          <Text style={styles.greetingMessage}>
+            {greetingMessage}
+          </Text>
           
-          {!currentUserPairingPhotoURL ? (
-            <View style={styles.takePhotoContainer}>
-              <Ionicons name="camera-reverse-outline" size={60} color={COLORS.primary} style={{marginBottom: 20}} />
-              <Text style={styles.promptText}>It's time for your daily pairing photo!</Text>
-              <PrimaryButton
-                text="Take Pairing Photo"
-                onPress={handleTakePhoto}
-                icon="camera-outline"
-                style={styles.actionButton}
-              />
-              <View style={{ marginTop: 16 }}>
-                <SecondaryButton
-                  text="Maybe Later (Home)"
-                  onPress={handleGoHome}
+          {/* Large Heading with Partner's Name */}
+          <Text style={styles.partnerName}>
+            {partner?.displayName || 'Your Partner'}
+          </Text>
+          
+          {/* Central Area with User Photos */}
+          <View style={styles.photoContainer}>
+            {/* Current User's Photo */}
+            <View style={styles.photoWrapper}>
+              {currentUserPairingPhotoURL ? (
+                <Image
+                  source={{ uri: currentUserPairingPhotoURL }}
+                  style={styles.userPhoto}
                 />
-              </View>
-            </View>
-          ) : (
-            <View style={styles.pairingCompleteContainer}>
-              <Text style={styles.submittedText}>You've submitted your photo!</Text>
-              
-              {partnerPairingPhotoURL ? (
-                <View style={styles.bothSubmitted}>
-                  <Text style={styles.completedText}>Both of you have submitted photos!</Text>
-                  <View style={styles.previewContainer}>
-                    <Image 
-                      source={{ uri: currentUserPairingPhotoURL }} 
-                      style={styles.previewImage}
-                    />
-                    <Image 
-                      source={{ uri: partnerPairingPhotoURL }} 
-                      style={styles.previewImage}
-                    />
-                  </View>
-                  <Text style={styles.completedSubtext}>
-                    Check the feed to see your pairing displayed!
-                  </Text>
-                </View>
               ) : (
-                <View style={styles.waitingContainer}>
-                  <Text style={styles.waitingText}>
-                    Waiting for {partner?.username || partner?.displayName || 'your partner'} to submit their photo...
-                  </Text>
-                  
-                  <View style={styles.chatPromptContainer}>
-                    <Text style={styles.chatPrompt}>
-                      Send a friendly reminder in chat!
-                    </Text>
-                    <PrimaryButton
-                      text="Open Chat"
-                      onPress={handleOpenChat}
-                      icon="chatbubble-outline"
-                      style={styles.actionButton}
-                    />
-                  </View>
+                <View style={[styles.userPhoto, styles.placeholderPhoto]}>
+                  <Ionicons name="person" size={50} color={COLORS.textSecondary} />
                 </View>
               )}
-              
-              <View style={styles.userInfoContainer}>
-                <TouchableOpacity 
-                  style={styles.userInfo}
-                  onPress={handleViewProfile}
-                >
-                  <Image 
-                    source={{ uri: partner?.photoURL || 'https://via.placeholder.com/100' }}
-                    style={styles.userAvatar}
-                  />
-                  <View>
-                    <Text style={styles.userName}>
-                      {partner?.displayName || partner?.username || 'Your Partner'}
-                    </Text>
-                    <Text style={styles.userUsername}>
-                      @{partner?.username || 'user'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-                
-                <SecondaryButton
-                  text="Go Home"
-                  onPress={handleGoHome}
-                  style={{ marginTop: 16 }}
-                />
-              </View>
+              <Text style={styles.photoLabel}>You</Text>
             </View>
-          )}
+            
+            {/* Partner's Photo */}
+            <View style={styles.photoWrapper}>
+              {partnerPairingPhotoURL ? (
+                <Image
+                  source={{ uri: partnerPairingPhotoURL }}
+                  style={styles.userPhoto}
+                />
+              ) : (
+                <View style={[styles.userPhoto, styles.placeholderPhoto]}>
+                  <Ionicons name="person" size={50} color={COLORS.textSecondary} />
+                </View>
+              )}
+              <Text style={styles.photoLabel}>{partner?.displayName || 'Partner'}</Text>
+            </View>
+          </View>
+          
+          {/* Status Message */}
+          <Text style={styles.statusMessage}>
+            {getSubmissionStatusMessage}
+          </Text>
+          
+          {/* Button Stack */}
+          <View style={styles.buttonStack}>
+            <PrimaryButton
+              text="Open Chat"
+              onPress={handleOpenChat}
+              icon="chatbubble-outline"
+              style={styles.actionButton}
+            />
+            
+            <SecondaryButton
+              text={getSecondaryButtonConfig.text}
+              onPress={getSecondaryButtonConfig.action}
+              icon={!currentUserPairingPhotoURL ? "camera-outline" : "eye-outline"}
+              style={styles.actionButton}
+            />
+            
+            <TouchableOpacity 
+              style={styles.backTextButton} 
+              onPress={handleGoHome}
+            >
+              <Text style={styles.backButtonText}>Back to BNOC</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -404,13 +406,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 40,
   },
-  welcomeMessage: {
+  partnerName: {
     fontFamily: FONTS.bold,
-    fontSize: 28,
-    color: COLORS.primary,
+    fontSize: 32,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 30,
+    marginHorizontal: 20,
+  },
+  photoContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 30,
+    width: '100%',
+  },
+  photoWrapper: {
+    alignItems: 'center',
+    marginHorizontal: 10,
+  },
+  userPhoto: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: COLORS.backgroundLight,
+    marginBottom: 10,
+  },
+  placeholderPhoto: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  photoLabel: {
+    fontFamily: FONTS.medium,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+  },
+  statusMessage: {
+    fontFamily: FONTS.regular,
+    fontSize: 18,
+    color: COLORS.text,
     textAlign: 'center',
     marginBottom: 40,
     marginHorizontal: 20,
+  },
+  buttonStack: {
+    width: '100%',
+    maxWidth: 320,
+    marginTop: 20,
+  },
+  actionButton: {
+    marginBottom: 16,
+    width: '100%',
+  },
+  backTextButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+  },
+  backButtonText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   loadingContainer: {
     flex: 1,
@@ -451,10 +513,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 22,
   },
-  calendarIcon: {
-    marginBottom: 30,
-    marginTop: 10,
-  },
   countdownTitle: {
     fontFamily: FONTS.regular,
     fontSize: 18,
@@ -473,138 +531,14 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     marginBottom: 20,
   },
-  takePhotoContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 30,
-  },
-  promptText: {
+  greetingMessage: {
     fontFamily: FONTS.regular,
     fontSize: 18,
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: 12,
+    marginHorizontal: 20,
   },
-  actionButton: {
-    minWidth: 200,
-  },
-  pairingCompleteContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  submittedText: {
-    fontFamily: FONTS.bold,
-    fontSize: 20,
-    color: COLORS.primary,
-    marginBottom: 20,
-  },
-  waitingContainer: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  waitingText: {
-    fontFamily: FONTS.regular,
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  chatPromptContainer: {
-    alignItems: 'center',
-    backgroundColor: '#222222',
-    borderRadius: BORDER_RADIUS.lg,
-    padding: 20,
-    marginVertical: 20,
-    width: '100%',
-  },
-  chatPrompt: {
-    fontFamily: FONTS.regular,
-    fontSize: 16,
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  userInfoContainer: {
-    alignItems: 'center',
-    width: '100%',
-    marginTop: 20,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#222222',
-    borderRadius: BORDER_RADIUS.lg,
-    padding: 16,
-    width: '100%',
-  },
-  userAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 16,
-  },
-  userName: {
-    fontFamily: FONTS.bold,
-    fontSize: 18,
-    color: COLORS.primary,
-  },
-  userUsername: {
-    fontFamily: FONTS.regular,
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  bothSubmitted: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  completedText: {
-    fontFamily: FONTS.bold,
-    fontSize: 18,
-    color: COLORS.success,
-    marginBottom: 20,
-  },
-  previewContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  previewImage: {
-    width: 130,
-    height: 130,
-    borderRadius: BORDER_RADIUS.md,
-    margin: 10,
-  },
-  completedSubtext: {
-    fontFamily: FONTS.regular,
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  notification: {
-    position: 'absolute',
-    top: 60,
-    alignSelf: 'center',
-    zIndex: 100,
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
-  },
-  notificationText: {
-    fontFamily: FONTS.bold,
-    fontSize: 14,
-    color: COLORS.background,
-    marginLeft: 8,
-  }
 });
 
 export default DailyPairingScreen;

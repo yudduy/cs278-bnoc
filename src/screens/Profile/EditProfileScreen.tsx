@@ -26,7 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../config/colors';
 import { globalStyles } from '../../styles/globalStyles';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../context/AuthContext';
 import { uploadUserProfileImage } from '../../services/storageService';
 import firebaseService from '../../services/firebase';
 
