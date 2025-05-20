@@ -2,11 +2,10 @@
  * DailyPairingScreen
  * 
  * Shows users their daily pairing with another user, following the black and white theme.
- * Displays both users' profile pictures side-by-side and provides options to take a photo,
- * open chat, or return to the feed.
+ * Displays both users' profile pictures and provides options to go to chat or return home.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,8 +16,7 @@ import {
   StatusBar,
   ActivityIndicator,
   ScrollView,
-  RefreshControl,
-  Animated
+  RefreshControl
 } from 'react-native';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,75 +25,24 @@ import { usePairing } from '../../context/PairingContext';
 import { useAuth } from '../../context/AuthContext';
 import PrimaryButton from '../../components/buttons/PrimaryButton';
 import SecondaryButton from '../../components/buttons/SecondaryButton';
+import { DAILY_PAIRING_MESSAGES } from '../../config/constants';
 import firebaseService from '../../services/firebase';
 import { User } from '../../types';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { MainStackParamList } from '../../types/navigation';
 
 // Type for navigation props
-type DailyPairingNavigationProp = StackNavigationProp<MainStackParamList>;
-
-// Array of randomized greeting messages to use for daily pairings
-const GREETING_MESSAGES = [
-  "Surprise! Meet your BNOC match for today:",
-  "Ready for a new connection? Say hello to:",
-  "Today's networking opportunity is with:",
-  "Your daily BNOC challenge: Connect with:",
-  "Time to expand your network with:",
-  "Meet someone new today:",
-  "Your Stanford connection for today:",
-  "Your BNOC adventure today is with:",
-  "Today's random match is with:",
-  "Broaden your network with:",
-  "Someone new to meet today:",
-  "Get ready to connect with:",
-  "Today's meaningful connection:",
-  "Meet a new face at Stanford:",
-  "Step outside your comfort zone with:"
-];
+type DailyPairingScreenNavigationProp = StackNavigationProp<MainStackParamList, 'Pairing'>;
 
 const DailyPairingScreen: React.FC = () => {
-  const navigation = useNavigation<DailyPairingNavigationProp>();
+  const navigation = useNavigation<DailyPairingScreenNavigationProp>();
   const { currentPairing, loadCurrentPairing } = usePairing();
   const { user } = useAuth();
   
+  const [welcomeMessage, setWelcomeMessage] = useState('');
   const [partner, setPartner] = useState<User | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [timeUntilNextPairing, setTimeUntilNextPairing] = useState<string>('');
-  
-  // Get a random greeting message for this session
-  const [greetingMessage] = useState(() => {
-    const randomIndex = Math.floor(Math.random() * GREETING_MESSAGES.length);
-    return GREETING_MESSAGES[randomIndex];
-  });
-  
-  // Animation for the countdown pulse effect
-  const pulseAnimation = useRef(new Animated.Value(1)).current;
-  
-  // Start the pulse animation
-  useEffect(() => {
-    if (!currentPairing) {
-      const pulse = Animated.sequence([
-        Animated.timing(pulseAnimation, {
-          toValue: 1.1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnimation, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        })
-      ]);
-      
-      Animated.loop(pulse).start();
-    }
-    
-    return () => {
-      pulseAnimation.stopAnimation();
-    };
-  }, [currentPairing]);
 
   // Determine if the current user is user1 in the pairing
   const isUser1 = useMemo(() => currentPairing?.user1_id === user?.id, [currentPairing, user]);
@@ -130,6 +77,10 @@ const DailyPairingScreen: React.FC = () => {
         const partnerData = await firebaseService.getUserById(partnerId);
         setPartner(partnerData || null);
       }
+      
+      // Select new random welcome message
+      const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
+      setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -137,130 +88,89 @@ const DailyPairingScreen: React.FC = () => {
     }
   }, [loadCurrentPairing, partnerId]);
 
-  // Calculate time until next pairing
-  useEffect(() => {
-    if (!currentPairing) {
-      // If no current pairing, calculate time until next pairing (5AM tomorrow)
-      const updateCountdown = () => {
-        const now = new Date();
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(5, 0, 0, 0); // Next pairings happen at 5AM
-        
-        const diffMs = tomorrow.getTime() - now.getTime();
-        const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-        
-        setTimeUntilNextPairing(`${diffHrs}h ${diffMins}m`);
-      };
-      
-      // Update immediately and then every minute
-      updateCountdown();
-      const interval = setInterval(updateCountdown, 60000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [currentPairing]);
-
   useEffect(() => {
     const loadScreenData = async () => {
       setLocalLoading(true);
-      if (user && !currentPairing) {
+      if (user && !currentPairing) { // Check if currentPairing is null
         await loadCurrentPairing(); 
+        // After attempting to load, currentPairing might still be null if no pairing exists
+        // or it will be populated. The subsequent useEffect for partner details will handle its part.
       }
+      // Select random welcome message
+      const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
+      setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
       
       // If there's no partnerId (derived from currentPairing), we might not need to wait for partner details.
       if (!partnerId) {
         setLocalLoading(false);
       }
+      // If currentPairing is still null after load attempt, and no partnerId, stop loading.
+      // If currentPairing is populated, partnerId will be set, and the other useEffect will manage loading.
     };
     loadScreenData();
-  }, [user, currentPairing, loadCurrentPairing, partnerId]);
-  
-  // Load partner details when partnerId changes
+  }, [user, currentPairing, loadCurrentPairing, partnerId]); // Added partnerId dependency
+
   useEffect(() => {
-    const getPartnerDetails = async () => {
+    const fetchPartnerDetails = async () => {
       if (partnerId) {
+        setLocalLoading(true); // Ensure loading is true when fetching partner
         try {
           const partnerData = await firebaseService.getUserById(partnerId);
-          setPartner(partnerData);
+          setPartner(partnerData || null);
         } catch (error) {
-          console.error('Error loading partner details:', error);
+          console.error('Error fetching partner details:', error);
+          setPartner(null);
         } finally {
-          setLocalLoading(false);
+          setLocalLoading(false); // Stop loading once partner fetch is done or fails
+        }
+      } else {
+        setPartner(null); 
+        // If no partnerId, and currentPairing might be loaded (or not found), ensure loading stops.
+        if (currentPairing !== undefined) { // Check if currentPairing has been determined (even if null)
+            setLocalLoading(false);
         }
       }
     };
-    
-    getPartnerDetails();
-  }, [partnerId]);
-  
-  // Get submission status message
-  const getSubmissionStatusMessage = useMemo(() => {
-    if (!currentPairing) return "";
-    
-    const userSubmitted = !!currentUserPairingPhotoURL;
-    const partnerSubmitted = !!partnerPairingPhotoURL;
-    
-    if (userSubmitted && partnerSubmitted) {
-      return "You've both snapped for today!";
-    } else if (userSubmitted && !partnerSubmitted) {
-      return `Your snap is in! Waiting for ${partner?.displayName || 'your partner'}.`;
-    } else if (!userSubmitted && partnerSubmitted) {
-      return `${partner?.displayName || 'Your partner'} has snapped! Your turn.`;
-    } else {
-      return "Time to snap your daily selfies!";
+
+    // Only fetch if currentPairing is available (meaning partnerId would be derived)
+    // or if currentPairing is explicitly null (meaning no pairing, so stop loading)
+    if (currentPairing !== undefined) { 
+        fetchPartnerDetails();
     }
-  }, [currentPairing, currentUserPairingPhotoURL, partnerPairingPhotoURL, partner]);
-  
-  // Get secondary button config based on submission status
-  const getSecondaryButtonConfig = useMemo(() => {
-    if (!currentUserPairingPhotoURL) {
-      return {
-        text: `Snap with ${partner?.displayName || 'Partner'}`,
-        action: handleTakePhoto
-      };
-    } else {
-      return {
-        text: "View/Retake Snap",
-        action: handleViewSelfies
-      };
-    }
-  }, [currentUserPairingPhotoURL, partner]);
-  
-  // Navigate to camera screen
-  const handleTakePhoto = () => {
-    if (currentPairing) {
-      navigation.navigate('Camera', { pairingId: currentPairing.id });
-    }
-  };
-  
-  // Navigate to view/retake selfies screen
-  const handleViewSelfies = () => {
-    if (currentPairing) {
-      navigation.navigate('ViewSelfies', { pairingId: currentPairing.id });
-    }
-  };
-  
-  // Navigate to chat screen
-  const handleOpenChat = () => {
-    if (currentPairing && partner && partnerId) {
-      navigation.navigate('Chat', {
-        chatId: currentPairing.chatId || `chat_${currentPairing.id}`,
-        pairingId: currentPairing.id
-      });
-    }
-  };
-  
-  // Navigate back to feed screen
-  const handleGoHome = () => {
-    navigation.navigate('TabNavigator', { 
-      screen: 'Feed',
-      params: { refresh: true }
+  }, [partnerId, currentPairing]);
+
+  const handleGoToChat = () => {
+    if (!currentPairing || !partner) return;
+    navigation.navigate('Chat', {
+      pairingId: currentPairing.id,
+      chatId: currentPairing.chatId,
     });
   };
+    const handleGoHome = () => {
+    // Navigate to the Feed tab
+    navigation.navigate('TabNavigator', {
+      screen: 'Feed',
+      params: {}
+    });
+  };
+
+  const handleTakePhoto = () => {
+    if (currentPairing && user) {
+      navigation.navigate('Camera', {
+        pairingId: currentPairing.id,
+        userId: user.id,
+        submissionType: 'pairing',
+      });
+    } else {
+      console.warn("Cannot navigate to camera: missing currentPairing or user.");
+    }
+  };
   
-  if (localLoading) {
+  // isLoading is now primarily localLoading. 
+  // It's true at the start, and during distinct loading phases (initial, partner fetch).
+  const isLoading = localLoading;
+
+  if (isLoading && currentPairing === undefined) { // Show loading if currentPairing is not yet determined
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
@@ -280,19 +190,10 @@ const DailyPairingScreen: React.FC = () => {
           <Text style={styles.emptyLogo}>BNOC</Text>
           <Text style={styles.noMatchTitle}>No new match for you today.</Text>
           <Text style={styles.noMatchSubtitle}>Check back tomorrow for your next BNOC connection!</Text>
-          
-          <Animated.View style={{ transform: [{ scale: pulseAnimation }], marginVertical: 24 }}>
-            <Ionicons name="time-outline" size={48} color={COLORS.primary} />
-          </Animated.View>
-          
-          <Text style={styles.countdownTitle}>Next match in:</Text>
-          <Text style={styles.countdownValue}>{timeUntilNextPairing}</Text>
-          <Text style={styles.excitedText}>Excited?</Text>
-          
+          <Ionicons name="calendar-outline" size={48} color={COLORS.primary} style={styles.calendarIcon} />
           <SecondaryButton
             text="Go Home"
             onPress={handleGoHome}
-            style={{ marginTop: 32 }}
           />
         </View>
       </SafeAreaView>
@@ -302,7 +203,6 @@ const DailyPairingScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-      
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -314,77 +214,88 @@ const DailyPairingScreen: React.FC = () => {
         }
       >
         <View style={styles.content}>
-          {/* Random Greeting Message */}
-          <Text style={styles.greetingMessage}>
-            {greetingMessage}
-          </Text>
+          <Text style={styles.welcomeMessage}>{welcomeMessage}</Text>
           
-          {/* Large Heading with Partner's Name */}
-          <Text style={styles.partnerName}>
-            {partner?.displayName || 'Your Partner'}
-          </Text>
-          
-          {/* Central Area with User Photos */}
-          <View style={styles.photoContainer}>
-            {/* Current User's Photo */}
-            <View style={styles.photoWrapper}>
-              {currentUserPairingPhotoURL ? (
-                <Image
-                  source={{ uri: currentUserPairingPhotoURL }}
-                  style={styles.userPhoto}
+          {!currentUserPairingPhotoURL ? (
+            <View style={styles.takePhotoContainer}>
+              <Ionicons name="camera-reverse-outline" size={60} color={COLORS.primary} style={{marginBottom: 20}} />
+              <Text style={styles.promptText}>It's time for your daily pairing photo!</Text>
+              <PrimaryButton
+                text="Take Pairing Photo"
+                onPress={handleTakePhoto}
+                icon="camera-outline"
+                style={styles.actionButton}
+              />
+              <View style={{ marginTop: 16 }}>
+                <SecondaryButton
+                  text="Maybe Later (Home)"
+                  onPress={handleGoHome}
                 />
-              ) : (
-                <View style={[styles.userPhoto, styles.placeholderPhoto]}>
-                  <Ionicons name="person" size={50} color={COLORS.textSecondary} />
-                </View>
-              )}
-              <Text style={styles.photoLabel}>You</Text>
+              </View>
             </View>
-            
-            {/* Partner's Photo */}
-            <View style={styles.photoWrapper}>
-              {partnerPairingPhotoURL ? (
-                <Image
-                  source={{ uri: partnerPairingPhotoURL }}
-                  style={styles.userPhoto}
+          ) : (
+            <>
+              <View style={styles.feedStyleProfilesContainer}>
+                {/* Partner Profile - Displayed at the top */}
+                <View style={styles.feedStyleProfileWrapper}>
+                  <Text style={styles.feedStyleUsername}>{partner?.displayName || 'Your Partner'}</Text>
+                  <View style={styles.feedStyleProfileImageContainer}>
+                    {partnerPairingPhotoURL ? (
+                      <Image 
+                        source={{ uri: partnerPairingPhotoURL }}
+                        style={styles.feedStyleProfileImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.feedStyleProfileImage, styles.photoMissingPlaceholder]}>
+                        <Text style={styles.photoMissingText}>
+                          {partner ? `${partner.displayName || 'Partner'} hasn't submitted yet.` : "Waiting for partner..."}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+                
+                {/* Your Profile - Displayed below partner */}
+                <View style={styles.feedStyleProfileWrapper}>
+                  <Text style={styles.feedStyleUsername}>You</Text>
+                  <View style={styles.feedStyleProfileImageContainer}>
+                    {currentUserPairingPhotoURL ? (
+                      <Image 
+                        source={{ uri: currentUserPairingPhotoURL }}
+                        style={styles.feedStyleProfileImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.feedStyleProfileImage, styles.photoMissingPlaceholder]}>
+                        <Text style={styles.photoMissingText}>Your photo</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+              
+              <View style={styles.buttonsContainer}>
+                <PrimaryButton
+                  text="Go To Chat"
+                  onPress={handleGoToChat}
+                  icon="chatbubble-outline"
+                  disabled={!partner} // Disable chat if partner details not loaded
                 />
-              ) : (
-                <View style={[styles.userPhoto, styles.placeholderPhoto]}>
-                  <Ionicons name="person" size={50} color={COLORS.textSecondary} />
-                </View>
-              )}
-              <Text style={styles.photoLabel}>{partner?.displayName || 'Partner'}</Text>
-            </View>
-          </View>
-          
-          {/* Status Message */}
-          <Text style={styles.statusMessage}>
-            {getSubmissionStatusMessage}
-          </Text>
-          
-          {/* Button Stack */}
-          <View style={styles.buttonStack}>
-            <PrimaryButton
-              text="Open Chat"
-              onPress={handleOpenChat}
-              icon="chatbubble-outline"
-              style={styles.actionButton}
-            />
-            
-            <SecondaryButton
-              text={getSecondaryButtonConfig.text}
-              onPress={getSecondaryButtonConfig.action}
-              icon={!currentUserPairingPhotoURL ? "camera-outline" : "eye-outline"}
-              style={styles.actionButton}
-            />
-            
-            <TouchableOpacity 
-              style={styles.backTextButton} 
-              onPress={handleGoHome}
-            >
-              <Text style={styles.backButtonText}>Back to BNOC</Text>
-            </TouchableOpacity>
-          </View>
+                <View style={styles.buttonSpacer} />
+                <SecondaryButton
+                  text={currentUserPairingPhotoURL ? "Retake Pairing Photo" : "Take Pairing Photo"}
+                  onPress={handleTakePhoto}
+                  icon="camera-outline"
+                />
+                <View style={styles.buttonSpacer} />
+                <SecondaryButton
+                  text="Back Home"
+                  onPress={handleGoHome}
+                />
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -398,146 +309,182 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
   },
   content: {
     flex: 1,
+    padding: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 40,
-  },
-  partnerName: {
-    fontFamily: FONTS.bold,
-    fontSize: 32,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 30,
-    marginHorizontal: 20,
-  },
-  photoContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 30,
-    width: '100%',
-  },
-  photoWrapper: {
-    alignItems: 'center',
-    marginHorizontal: 10,
-  },
-  userPhoto: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: COLORS.backgroundLight,
-    marginBottom: 10,
-  },
-  placeholderPhoto: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.backgroundLight,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-  },
-  photoLabel: {
-    fontFamily: FONTS.medium,
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginTop: 8,
-  },
-  statusMessage: {
-    fontFamily: FONTS.regular,
-    fontSize: 18,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 40,
-    marginHorizontal: 20,
-  },
-  buttonStack: {
-    width: '100%',
-    maxWidth: 320,
-    marginTop: 20,
-  },
-  actionButton: {
-    marginBottom: 16,
-    width: '100%',
-  },
-  backTextButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-  },
-  backButtonText: {
-    fontFamily: FONTS.regular,
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    textDecorationLine: 'underline',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 24,
   },
   loadingText: {
+    color: COLORS.primary,
     fontFamily: FONTS.regular,
     fontSize: 16,
-    color: COLORS.primary,
-    marginTop: 20,
+    marginTop: 16,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   emptyLogo: {
     fontFamily: FONTS.bold,
     fontSize: 24,
-    letterSpacing: 1,
     color: COLORS.primary,
-    marginBottom: 30,
+    marginBottom: 32,
+    letterSpacing: 1,
   },
   noMatchTitle: {
     fontFamily: FONTS.bold,
-    fontSize: 24,
+    fontSize: 22, 
     color: COLORS.primary,
+    marginBottom: 8,
     textAlign: 'center',
-    marginBottom: 16,
   },
   noMatchSubtitle: {
     fontFamily: FONTS.regular,
     fontSize: 16,
+    color: COLORS.primary,
+    marginBottom: 32,
+    textAlign: 'center',
+  },
+  calendarIcon: {
+    marginBottom: 40,
+    marginTop: 16,
+  },
+  welcomeMessage: {
+    fontFamily: FONTS.bold,
+    fontSize: 28, // Adjusted for prominence
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: 40, // Increased margin
+    letterSpacing: 0.5,
+  },
+  takePhotoContainer: { // New Style
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  promptText: { // New Style
+    fontFamily: FONTS.regular,
+    fontSize: 18,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  actionButton: { // Style for main action buttons
+    width: '80%',
+    paddingVertical: 12,
+  },
+  // Original horizontal layout (not used with new design)
+  profilesContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 48,
+    width: '100%',
+  },
+  profileWrapper: {
+    alignItems: 'center',
+    maxWidth: 130,
+  },
+  profileImageContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+    overflow: 'hidden',
+    backgroundColor: COLORS.backgroundDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  username: {
+    fontFamily: FONTS.medium,
+    fontSize: 16,
+    color: COLORS.text,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  connector: {
+    marginHorizontal: 8,
+  },
+  // New vertical feed-style layout
+  feedStyleProfilesContainer: {
+    width: '100%',
+    marginBottom: 32,
+    alignItems: 'center',
+  },
+  feedStyleProfileWrapper: {
+    width: '100%',
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  feedStyleProfileImageContainer: {
+    width: 280,
+    height: 350,
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    overflow: 'hidden',
+    backgroundColor: COLORS.backgroundDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  feedStyleProfileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  feedStyleUsername: {
+    fontFamily: FONTS.medium,
+    fontSize: 18,
+    color: COLORS.text,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  placeholderImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: COLORS.backgroundDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    fontFamily: FONTS.bold,
+    fontSize: 48,
+    color: COLORS.primary,
+  },
+  photoMissingPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 8,
+  },
+  photoMissingText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
   },
-  countdownTitle: {
-    fontFamily: FONTS.regular,
-    fontSize: 18,
-    color: COLORS.primary,
-    marginBottom: 8,
+  buttonsContainer: {
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'stretch',
   },
-  countdownValue: {
-    fontFamily: FONTS.bold,
-    fontSize: 28,
-    color: COLORS.primary,
-    marginBottom: 16,
-  },
-  excitedText: {
-    fontFamily: FONTS.italic,
-    fontSize: 20,
-    color: COLORS.primary,
-    marginBottom: 20,
-  },
-  greetingMessage: {
-    fontFamily: FONTS.regular,
-    fontSize: 18,
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginBottom: 12,
-    marginHorizontal: 20,
+  buttonSpacer: {
+    height: 16,
   },
 });
 
