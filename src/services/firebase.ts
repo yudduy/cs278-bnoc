@@ -266,6 +266,7 @@ const firebaseService = {
       displayName: 'Demo User',
       photoURL: 'https://example.com/demo.jpg',
       createdAt: now,
+      lastActive: now,
       lastUpdated: now,
       isActive: true,
       flakeStreak: 0,
@@ -277,7 +278,7 @@ const firebaseService = {
         pairingNotification: true,
         chatNotification: true,
         reminderNotification: true,
-        socialNotification: true,
+        socialNotifications: true,
         completionNotification: true,
         quietHoursStart: 22,
         quietHoursEnd: 8
@@ -326,6 +327,57 @@ const firebaseService = {
     
     // Step 2: Update the pairing with the photo URL
     return PairingService.updatePairingWithPhoto(pairingId, userId, photoUrl, isPrivate);
+  },
+
+  /**
+   * Create a notification for a user
+   */
+  createNotification: async (notification: any): Promise<void> => {
+    try {
+      if (!notification.userId) {
+        throw new Error('Notification must have a userId');
+      }
+
+      // Add notification to Firestore
+      await addDoc(collection(db, 'notifications'), {
+        ...notification,
+        createdAt: notification.createdAt || Timestamp.now(),
+        read: notification.read || false
+      });
+
+      console.log(`Notification created for user ${notification.userId}`);
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update a pairing document with the provided data
+   */
+  updatePairing: async (pairingId: string, updateData: any): Promise<void> => {
+    try {
+      if (!pairingId) {
+        throw new Error('Pairing ID is required');
+      }
+
+      // Convert Date objects to Firestore Timestamps
+      const processedData = { ...updateData };
+      for (const key in processedData) {
+        if (processedData[key] instanceof Date) {
+          processedData[key] = Timestamp.fromDate(processedData[key]);
+        }
+      }
+
+      // Update the pairing document
+      const pairingRef = doc(db, 'pairings', pairingId);
+      await updateDoc(pairingRef, processedData);
+
+      console.log(`Pairing ${pairingId} updated successfully`);
+    } catch (error) {
+      console.error(`Error updating pairing ${pairingId}:`, error);
+      throw error;
+    }
   },
 };
 

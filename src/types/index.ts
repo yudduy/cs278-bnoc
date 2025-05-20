@@ -244,6 +244,24 @@ export interface Pairing {
   lastUpdatedAt?: Timestamp;
 }
 
+/**
+ * Pairing Feed Item (extended pairing with user profile info)
+ */
+export interface PairingFeedItem extends Pairing {
+  user1?: {
+    id: string;
+    username: string;
+    displayName?: string;
+    photoURL?: string;
+  };
+  user2?: {
+    id: string;
+    username: string;
+    displayName?: string;
+    photoURL?: string;
+  };
+}
+
 // -----------------------------
 // CHAT RELATED TYPES
 // -----------------------------
@@ -359,6 +377,14 @@ export type TabParamList = {
   Feed: undefined;
   Profile: { userId?: string };
 };
+
+/**
+ * Submit photo parameters
+ */
+export interface SubmitPhotoParams {
+  photoURL: string;
+  isPrivate: boolean;
+}
 
 // Export auth types
 export * from './auth';

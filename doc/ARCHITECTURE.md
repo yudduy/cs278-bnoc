@@ -122,7 +122,7 @@ UI is built using composable components that follow the single responsibility pr
 
 1. Feed data is stored in Firestore (personalized and global feeds)
 2. `useFeed` hook retrieves and manages feed data
-3. Feed components display the data
+3. Feed components display the data with optimized image loading
 4. User interactions update the Firestore documents
 5. Real-time updates are reflected in the UI
 
@@ -176,7 +176,16 @@ The app uses a single camera capture system with `expo-camera`, managed through:
 
 This simplifies the user experience while still supporting the core functionality of pairing selfies.
 
-### 2. Denormalized Data Structure
+### 2. Optimized Image Handling
+
+The app uses efficient image handling to improve performance:
+
+- **expo-image** - Used for optimized image loading with automatic caching
+- **expo-image-manipulator** - For image resizing and compression before uploads
+- **Progressive Loading** - Images load progressively in the feed for better UX
+- **Efficient Storage** - Firebase Storage paths are organized for fast retrieval
+
+### 3. Denormalized Data Structure
 
 For improved performance, the app uses a denormalized data structure:
 
@@ -186,7 +195,7 @@ For improved performance, the app uses a denormalized data structure:
 
 This approach reduces query complexity and improves real-time performance.
 
-### 3. Firebase Cloud Functions for Business Logic
+### 4. Firebase Cloud Functions for Business Logic
 
 Complex business logic is implemented in Cloud Functions:
 
@@ -235,10 +244,11 @@ The app uses a bidirectional friend connection model:
 
 ## Performance Considerations
 
-1. **Image Optimization**: Photos are optimized before upload
-2. **Pagination**: Feed uses pagination to limit data transfer
-3. **Caching**: Important data is cached for offline access
-4. **Lazy Loading**: Components and screens implement lazy loading where appropriate
+1. **Image Optimization**: Photos are optimized before upload using expo-image-manipulator
+2. **Image Caching**: expo-image provides automatic caching for better performance
+3. **Pagination**: Feed uses pagination to limit data transfer
+4. **Caching**: Important data is cached for offline access
+5. **Lazy Loading**: Components and screens implement lazy loading where appropriate
 
 ## Security Architecture
 

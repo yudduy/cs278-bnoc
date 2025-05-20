@@ -12,7 +12,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
   TextInput,
   ScrollView,
@@ -21,13 +20,18 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../config/colors';
 import { globalStyles } from '../../styles/globalStyles';
 import { useAuth } from '../../hooks/useAuth';
+import { uploadUserProfileImage } from '../../services/storageService';
 import firebaseService from '../../services/firebase';
+
+// Default profile image
+const DEFAULT_PROFILE_IMAGE = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fdefault-profile.jpg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 
 const EditProfileScreen = () => {
   const navigation = useNavigation();
@@ -41,6 +45,7 @@ const EditProfileScreen = () => {
   
   // UI state
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   
@@ -161,12 +166,26 @@ const EditProfileScreen = () => {
        }
       
       // Upload new profile image if changed
-      let photoURL = user?.photoURL;
+      let photoURL: string | undefined = user?.photoURL || undefined;
       
-      if (imageChanged && profileImage) {
-        // In production, this would upload to Firebase Storage
-        // For demo, we'll just use the local URI
-        photoURL = profileImage;
+      if (imageChanged && profileImage && user?.id) {
+        try {
+          // Reset upload progress
+          setUploadProgress(0);
+          
+          // Upload to Firebase Storage using our enhanced function
+          photoURL = await uploadUserProfileImage(
+            profileImage,
+            user.id,
+            (progress) => setUploadProgress(progress)
+          );
+          
+          console.log('Profile image uploaded successfully:', photoURL);
+        } catch (error) {
+          console.error('Error uploading profile image:', error);
+          Alert.alert('Upload Error', 'Failed to upload profile image, but we will save your other profile changes.');
+          // Continue with saving other profile information
+        }
       }
       
       // Update user profile
@@ -184,6 +203,29 @@ const EditProfileScreen = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Show profile image options
+  const showImageOptions = () => {
+    Alert.alert(
+      'Profile Picture',
+      'Choose a profile picture',
+      [
+        {
+          text: 'Take Photo',
+          onPress: handleTakePhoto,
+        },
+        {
+          text: 'Choose from Library',
+          onPress: handlePickImage,
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
   };
   
   return (
@@ -216,10 +258,27 @@ const EditProfileScreen = () => {
         </View>
         
         <View style={styles.profileImageContainer}>
+          <TouchableOpacity onPress={showImageOptions} disabled={loading}>
           <Image
-            source={profileImage ? { uri: profileImage } : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }}
+              source={{ uri: profileImage || DEFAULT_PROFILE_IMAGE }}
             style={styles.profileImage}
-          />
+              contentFit="cover"
+              transition={300}
+              cachePolicy="memory-disk"
+              placeholder={{ uri: profileImage || DEFAULT_PROFILE_IMAGE }}
+            />
+            
+            {/* Upload progress indicator overlay */}
+            {loading && imageChanged && (
+              <View style={styles.progressOverlay}>
+                <Text style={styles.progressText}>{uploadProgress.toFixed(0)}%</Text>
+              </View>
+            )}
+            
+            <View style={styles.editBadge}>
+              <Ionicons name="camera" size={18} color={COLORS.background} />
+            </View>
+          </TouchableOpacity>
           
           <View style={styles.imageActions}>
             <TouchableOpacity
@@ -250,39 +309,33 @@ const EditProfileScreen = () => {
               value={displayName}
               onChangeText={handleDisplayNameChange}
                             placeholder="Your display name"
-               placeholderTextColor={COLORS.textSecondary}
-              autoCapitalize="words"
+              placeholderTextColor={COLORS.textLight}
+              maxLength={30}
               editable={!loading}
             />
             {displayNameError && (
               <Text style={styles.errorText}>{displayNameError}</Text>
             )}
-            <Text style={styles.inputHelper}>This is your public name visible to others</Text>
           </View>
           
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Username</Text>
-            <View style={styles.usernameInputContainer}>
-              <Text style={styles.atSymbol}>@</Text>
               <TextInput
-                style={[
-                  styles.usernameInput,
-                  usernameError && styles.inputError
-                ]}
+              style={[styles.input, usernameError && styles.inputError]}
                 value={username}
                 onChangeText={handleUsernameChange}
-                                placeholder="username"
-                 placeholderTextColor={COLORS.textSecondary}
+              placeholder="Your username"
+              placeholderTextColor={COLORS.textLight}
                 autoCapitalize="none"
                 autoCorrect={false}
+              maxLength={20}
                 editable={!loading}
               />
-            </View>
             {usernameError && (
               <Text style={styles.errorText}>{usernameError}</Text>
             )}
-            <Text style={styles.inputHelper}>
-              Only letters, numbers, and underscores. 3-20 characters.
+            <Text style={styles.inputHelperText}>
+              Letters, numbers, and underscores only
             </Text>
           </View>
         </View>
@@ -300,13 +353,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
   backButton: {
-    padding: 8,
+    padding: 5,
   },
   headerTitle: {
     fontSize: 18,
@@ -314,104 +368,108 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   saveButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    minWidth: 70,
+    alignItems: 'center',
   },
   saveButtonText: {
-    color: '#fff',
+    color: COLORS.background,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   disabledButton: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   profileImageContainer: {
     alignItems: 'center',
-    marginVertical: 24,
+    marginTop: 30,
   },
   profileImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    marginBottom: 16,
+    backgroundColor: COLORS.border,
+  },
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: COLORS.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: COLORS.background,
+  },
+  progressOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 60,
+  },
+  progressText: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   imageActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    marginTop: 15,
   },
   imageActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.backgroundLight,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginHorizontal: 8,
-    backgroundColor: COLORS.background,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    marginHorizontal: 5,
   },
   imageActionText: {
-    marginLeft: 4,
-    color: COLORS.primary,
-    fontWeight: '500',
+    color: COLORS.text,
+    marginLeft: 5,
+    fontSize: 14,
   },
   formContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
+    paddingHorizontal: 20,
+    marginTop: 30,
   },
   inputGroup: {
     marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontSize: 14,
+    color: COLORS.textLight,
     marginBottom: 8,
   },
   input: {
-    height: 48,
     backgroundColor: COLORS.backgroundLight,
     borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    color: COLORS.text,
+    fontSize: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: COLORS.text,
   },
   inputError: {
     borderColor: COLORS.error,
   },
-  usernameInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
-    backgroundColor: COLORS.backgroundLight,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 16,
-  },
-  atSymbol: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    marginRight: 4,
-  },
-  usernameInput: {
-    flex: 1,
-    height: '100%',
-    fontSize: 16,
-    color: COLORS.text,
-  },
   errorText: {
-    fontSize: 12,
     color: COLORS.error,
-    marginTop: 4,
-  },
-  inputHelper: {
     fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 4,
+    marginTop: 5,
+  },
+  inputHelperText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 5,
   },
 });
 

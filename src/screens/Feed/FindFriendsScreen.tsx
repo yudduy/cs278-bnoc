@@ -12,10 +12,10 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Alert
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -24,9 +24,11 @@ import { debounce } from 'lodash';
 import { COLORS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { useAuth } from '../../context/AuthContext';
-import firebaseService from '../../services/firebase';
 import { User } from '../../types';
 import * as userService from '../../services/userService';
+
+// Default profile image
+const DEFAULT_PROFILE_IMAGE = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fdefault-profile.jpg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 
 const FindFriendsScreen: React.FC = () => {
   // State
@@ -72,37 +74,19 @@ const FindFriendsScreen: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // In a real app, this would fetch from Firebase
-      // For demo, use mock data with 'any' type to avoid TypeScript errors
-      const mockUsers: any[] = [
-        {
-          id: 'user1',
-          email: 'justin@stanford.edu',
-          username: 'justin',
-          displayName: 'Justin Leong',
-          photoURL: 'https://picsum.photos/100/100?random=1',
-        },
-        {
-          id: 'user2',
-          email: 'duy@stanford.edu',
-          username: 'duy',
-          displayName: 'Duy Nguyen',
-          photoURL: 'https://picsum.photos/100/100?random=2',
-        },
-        {
-          id: 'user3',
-          email: 'kelvin@stanford.edu',
-          username: 'kelvin',
-          displayName: 'Kelvin Nguyen',
-          photoURL: 'https://picsum.photos/100/100?random=3',
-        }
-      ];
+      // Query all users from Firestore
+      const allUsers = await userService.getAllUsers();
       
-      // Filter out current user
-      const filteredUsers = mockUsers.filter(u => u.id !== user?.id);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Filter out current user and blocked users
+      const filteredUsers = allUsers.filter((u: User) => {
+        // Skip current user
+        if (u.id === user?.id) return false;
+        
+        // Skip blocked users
+        if (user?.blockedIds?.includes(u.id)) return false;
+        
+        return true;
+      });
       
       setUsers(filteredUsers);
       setFilteredUsers(filteredUsers);
@@ -119,14 +103,16 @@ const FindFriendsScreen: React.FC = () => {
    */
   const loadConnections = async () => {
     try {
-      // In a real app, this would fetch from Firebase
-      // For demo, use mock data
+      if (!user?.id) return;
       
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Get the current user's connections
+      const currentUser = await userService.getUserById(user.id);
       
-      // Mock connections - for demo, no connections yet
-      setConnections([]);
+      if (currentUser && Array.isArray(currentUser.connections)) {
+        setConnections(currentUser.connections);
+      } else {
+        setConnections([]);
+      }
     } catch (error) {
       console.error('Error loading connections:', error);
     }
@@ -135,20 +121,20 @@ const FindFriendsScreen: React.FC = () => {
   /**
    * Add a user as a connection (mutual friendship)
    */
-  const handleAddConnection = async (userId: string) => {
+  const handleAddConnection = async (targetUserId: string) => {
     try {
       // Update loading state for this specific user
-      setAddingIds(prev => ({ ...prev, [userId]: true }));
+      setAddingIds(prev => ({ ...prev, [targetUserId]: true }));
       
       if (!user?.id) {
         throw new Error('User not authenticated');
       }
       
-      // Call the Firebase service to update connection (mutual)
-      await userService.updateConnection(user.id, userId, 'add');
+      // Call the userService to update connection (mutual)
+      await userService.updateConnection(user.id, targetUserId, 'add');
       
       // Update local connections list
-      setConnections(prev => [...prev, userId]);
+      setConnections(prev => [...prev, targetUserId]);
       
       // Show success message
       Alert.alert('Success', 'Friend added successfully! You are now connected with this user.');
@@ -156,7 +142,7 @@ const FindFriendsScreen: React.FC = () => {
       console.error('Error adding connection:', error);
       Alert.alert('Error', 'Failed to add friend. Please try again.');
     } finally {
-      setAddingIds(prev => ({ ...prev, [userId]: false }));
+      setAddingIds(prev => ({ ...prev, [targetUserId]: false }));
     }
   };
   
@@ -180,8 +166,11 @@ const FindFriendsScreen: React.FC = () => {
     return (
       <View style={styles.userItem}>
         <Image 
-          source={item.photoURL ? { uri: item.photoURL } : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }}
+          source={{ uri: item.photoURL || DEFAULT_PROFILE_IMAGE }}
           style={styles.userAvatar}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
         />
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{item.displayName || item.username}</Text>

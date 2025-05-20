@@ -1,22 +1,31 @@
 // src/services/pairingService.ts
 
-import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, arrayUnion, Timestamp, DocumentSnapshot, increment, startAfter, QueryConstraint } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, arrayUnion, Timestamp, DocumentSnapshot, increment, startAfter, QueryConstraint, deleteDoc, documentId, arrayRemove, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
-import { Pairing, Comment, PairingFeedItem, User } from '../types';
+import { Pairing, Comment, User, PairingFeedItem, UserProfile } from '../types';
 import { db, storage } from '../config/firebase';
 import { getUserById } from './userService';
+import * as feedService from './feedService';
+import * as notificationService from './notificationService';
 
 /**
  * Get current pairing for a user
  */
 export const getCurrentPairing = async (userId: string): Promise<Pairing | null> => {
   try {
+    if (!userId) {
+      console.error('getCurrentPairing called without a valid userId');
+      return null;
+    }
+
     // Get today's date at midnight
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Query pairings for today
+    console.log(`Getting current pairing for user ${userId} after ${today.toISOString()}`);
+    
+    // Query pairings for today where the user is included in the users array
     const pairingsQuery = query(
       collection(db, 'pairings'),
       where('users', 'array-contains', userId),
@@ -26,12 +35,39 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     );
     
     const snapshot = await getDocs(pairingsQuery);
-    if (snapshot.empty) return null;
     
+    // If no pairings found, return null
+    if (snapshot.empty) {
+      console.log(`No active pairing found for user ${userId}`);
+      return null;
+    }
+    
+    // Get the first (and should be only) pairing
     const pairingDoc = snapshot.docs[0];
+    const pairingData = pairingDoc.data();
+    
+    // Validate that the pairing data has the required fields
+    if (!pairingData || !pairingData.users || !Array.isArray(pairingData.users)) {
+      console.error(`Invalid pairing data for pairing ${pairingDoc.id}:`, pairingData);
+      return null;
+    }
+    
+    // Additional validation to ensure the user is part of this pairing
+    if (!pairingData.users.includes(userId)) {
+      console.error(`User ${userId} not found in pairing ${pairingDoc.id} users array:`, pairingData.users);
+      return null;
+    }
+    
+    // Ensure user is properly assigned as either user1 or user2
+    if (pairingData.user1_id !== userId && pairingData.user2_id !== userId) {
+      console.error(`User ${userId} found in users array but not assigned as user1_id or user2_id in pairing ${pairingDoc.id}`);
+      return null;
+    }
+    
+    // Return the pairing with its ID
     return {
       id: pairingDoc.id,
-      ...pairingDoc.data()
+      ...pairingData
     } as Pairing;
   } catch (error) {
     console.error('Error getting current pairing:', error);
@@ -40,40 +76,59 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
 };
 
 /**
- * Get pairing by ID
+ * Get a specific pairing by ID
  */
 export const getPairingById = async (pairingId: string): Promise<Pairing | null> => {
   try {
-    const pairingDoc = await getDoc(doc(db, 'pairings', pairingId));
-    if (!pairingDoc.exists()) return null;
+    if (!pairingId) {
+      console.error('getPairingById called without pairingId');
+      return null;
+    }
+    
+    const pairingRef = doc(db, 'pairings', pairingId);
+    const pairingDoc = await getDoc(pairingRef);
+    
+    if (!pairingDoc.exists()) {
+      console.log(`No pairing found with ID ${pairingId}`);
+      return null;
+    }
     
     return {
       id: pairingDoc.id,
       ...pairingDoc.data()
     } as Pairing;
   } catch (error) {
-    console.error('Error getting pairing by ID:', error);
+    console.error(`Error getting pairing ${pairingId}:`, error);
     return null;
   }
 };
 
 /**
- * Get user pairing history
+ * Get user's pairing history
  */
-export const getUserPairingHistory = async (userId: string, limitNum: number = 10): Promise<Pairing[]> => {
+export const getUserPairingHistory = async (userId: string, limitCount: number = 10): Promise<Pairing[]> => {
   try {
+    if (!userId) {
+      console.error('getUserPairingHistory called without userId');
+      return [];
+    }
+    
+    // Query for pairings involving this user, ordered by date
     const pairingsQuery = query(
       collection(db, 'pairings'),
       where('users', 'array-contains', userId),
+      where('status', '==', 'completed'),
       orderBy('date', 'desc'),
-      limit(limitNum)
+      limit(limitCount)
     );
     
     const snapshot = await getDocs(pairingsQuery);
-    return snapshot.docs.map(docData => ({
-      id: docData.id,
-      ...docData.data()
-    })) as Pairing[];
+    
+    // Map snapshot to Pairing objects
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Pairing));
   } catch (error) {
     console.error('Error getting user pairing history:', error);
     return [];
@@ -341,28 +396,102 @@ export const updatePairingWithPhoto = async (
     }
 
     // Check if both users have now submitted
-    const otherUserSubmitted = 
-      (pairingData.user1_id === userId && !!pairingData.user2_photoURL) || 
-      (pairingData.user2_id === userId && !!pairingData.user1_photoURL);
+    const user1Submitted = 
+      (pairingData.user1_id === userId) || 
+      (!!pairingData.user1_photoURL && pairingData.user1_submittedAt !== null);
+      
+    const user2Submitted = 
+      (pairingData.user2_id === userId) || 
+      (!!pairingData.user2_photoURL && pairingData.user2_submittedAt !== null);
       
     // If this submission completes the pairing
-    if ((newStatus === 'user1_submitted' && pairingData.user2_photoURL) || 
-        (newStatus === 'user2_submitted' && pairingData.user1_photoURL)) {
+    if (user1Submitted && user2Submitted) {
+      console.log(`Both users have submitted photos for pairing ${pairingId}. Marking as completed.`);
       updateData.status = 'completed';
-      updateData.completedAt = Timestamp.now(); // Uncommented: Assuming Pairing type has completedAt
+      updateData.completedAt = Timestamp.now();
     } else {
       updateData.status = newStatus;
+      console.log(`User ${userId} submitted photo for pairing ${pairingId}. Status: ${newStatus}`);
     }
-    
-    // If the type Pairing has completedAt, uncomment the line above and ensure it's in the type.
-    // For now, if not in type, the status 'completed' marks completion.
-    // Also, if `completedAt` is critical, ensure it is part of the `Pairing` type in `src/types/index.ts`
 
     await updateDoc(pairingRef, updateData);
-    console.log(`Pairing ${pairingId} updated by user ${userId}. Status: ${updateData.status}`);
-
+    
+    // If pairing is now complete, publish to feeds
+    if (updateData.status === 'completed') {
+      try {
+        // Fetch the updated pairing to ensure we have all data
+        const updatedPairingDoc = await getDoc(pairingRef);
+        if (updatedPairingDoc.exists()) {
+          const updatedPairing = { id: updatedPairingDoc.id, ...updatedPairingDoc.data() } as Pairing;
+          
+          // Use the new publishPairingToFeed function from feedService
+          await feedService.publishPairingToFeed(updatedPairing);
+          
+          // Create notifications for both users
+          const otherUserId = userId === updatedPairing.user1_id ? updatedPairing.user2_id : updatedPairing.user1_id;
+          
+          // Get user details for notification
+          const currentUser = await getUserById(userId);
+          const otherUser = await getUserById(otherUserId);
+          
+          if (currentUser && otherUser) {
+            // Create completion notification for the other user
+            await notificationService.createNotification(
+              otherUserId,
+              'completion',
+              'Pairing Completed!',
+              `Your pairing with ${currentUser.username || 'your partner'} is now complete!`,
+              {
+                pairingId: pairingId,
+                senderId: userId
+              },
+              userId
+            );
+            
+            // Send a completion notification to the current user as well
+            await notificationService.createNotification(
+              userId,
+              'completion',
+              'Pairing Completed!',
+              `Your pairing with ${otherUser.username || 'your partner'} is now complete!`,
+              {
+                pairingId: pairingId,
+                senderId: otherUserId
+              },
+              otherUserId
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`Error publishing completed pairing ${pairingId} to feed:`, error);
+        // Don't throw here - the pairing was successfully updated, so we just log the error
+      }
+    } else if (updateData.status === 'user1_submitted' || updateData.status === 'user2_submitted') {
+      // If one user has submitted, notify the other user that it's their turn
+      const otherUserId = userId === pairingData.user1_id ? pairingData.user2_id : pairingData.user1_id;
+      const currentUser = await getUserById(userId);
+      
+      if (currentUser) {
+        try {
+          await notificationService.createNotification(
+            otherUserId,
+            'pairing',
+            'Your Turn!',
+            `${currentUser.username || 'Your partner'} has submitted their photo! It's your turn now.`,
+            {
+              pairingId: pairingId,
+              senderId: userId,
+              urgent: true
+            },
+            userId
+          );
+        } catch (notificationError) {
+          console.error('Error sending submission notification:', notificationError);
+        }
+      }
+    }
   } catch (error) {
-    console.error(`Error updating pairing ${pairingId} for user ${userId}:`, error);
+    console.error(`Error updating pairing ${pairingId} with photo:`, error);
     throw error;
   }
 };
@@ -474,48 +603,45 @@ export const updatePairingPrivacy = async (
 };
 
 /**
- * Get user stats based on pairings
+ * Get user stats related to pairings
  */
 export const getUserStats = async (userId: string): Promise<any> => {
   try {
-    // Get all of the user's pairings
-    const pairingsQuery = query(
+    if (!userId) {
+      console.error('getUserStats called without userId');
+      return {};
+    }
+    
+    // Query for completed pairings involving this user
+    const completedPairingsQuery = query(
       collection(db, 'pairings'),
-      where('users', 'array-contains', userId)
+      where('users', 'array-contains', userId),
+      where('status', '==', 'completed')
     );
     
-    const snapshot = await getDocs(pairingsQuery);
-    const pairings = snapshot.docs.map(doc => doc.data());
+    // Query for flaked pairings involving this user
+    const flakedPairingsQuery = query(
+      collection(db, 'pairings'),
+      where('users', 'array-contains', userId),
+      where('status', '==', 'flaked')
+    );
     
-    // Calculate stats
-    const totalPairings = pairings.length;
-    const completedPairings = pairings.filter(p => p.status === 'completed').length;
-    const flakedPairings = pairings.filter(p => p.status === 'flaked').length;
-    const completionRate = totalPairings > 0 ? completedPairings / totalPairings : 0;
+    // Execute both queries
+    const [completedSnapshot, flakedSnapshot] = await Promise.all([
+      getDocs(completedPairingsQuery),
+      getDocs(flakedPairingsQuery)
+    ]);
     
-    // Get unique connections
-    const uniqueConnections = new Set();
-    pairings.forEach(pairing => {
-      pairing.users.forEach((uid: string) => {
-        if (uid !== userId) uniqueConnections.add(uid);
-      });
-    });
-    
+    // Return stats object
     return {
-      totalPairings,
-      completedPairings,
-      flakedPairings,
-      completionRate,
-      uniqueConnections: uniqueConnections.size
+      totalPairings: completedSnapshot.size,
+      flakedPairings: flakedSnapshot.size
     };
   } catch (error) {
     console.error('Error getting user stats:', error);
     return {
       totalPairings: 0,
-      completedPairings: 0,
-      flakedPairings: 0,
-      completionRate: 0,
-      uniqueConnections: 0
+      flakedPairings: 0
     };
   }
 };

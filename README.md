@@ -1,6 +1,108 @@
 # BNOC - Daily Meetup Selfie App
 
-A React Native mobile application built with Expo that connects Stanford students through daily meetups, with a focus on fostering social interactions through selfies.
+BNOC (Be Nice Or Consequences) is a social mobile application designed for daily selfie exchanges between pairs of users. Similar to BeReal, it encourages authentic social connections through time-limited photo exchanges.
+
+## Overview
+
+The app randomly pairs users daily, requiring them to take and share selfies with their partners. After both users submit their photos, the completed pairing is visible in the global feed (if set to public) and in each user's personal feed.
+
+## Core Features
+
+- **Daily Pairings**: Users are randomly paired each day to exchange selfies
+- **Photo Sharing**: Simple camera interface for capturing and sharing selfies
+- **Feed System**: Personal and global feeds to view completed pairings
+- **Friend System**: Add friends to increase chances of being paired with connections
+- **Reminders**: Notification system to remind users to complete their pairings
+- **Chat**: In-app messaging between paired users
+
+## Technical Implementation
+
+### Data Model
+
+The app uses Firebase Firestore with the following key collections:
+
+- **users**: User profiles and authentication information
+- **pairings**: Daily pairing records with photo submissions
+- **globalFeed**: Public completed pairings
+- **notifications**: User notification records
+- **comments**: Comments on pairings
+
+### Recent Improvements
+
+#### 1. Firebase Integration
+
+- Replaced all mock data with real Firebase Firestore data
+- Implemented Firebase Storage for photo uploads
+- Added batch operations for atomic writes across multiple documents
+- Added retry logic for handling WebChannelConnection RPC errors
+
+#### 2. Pairing System Enhancements
+
+- Improved `getCurrentPairing()` with better validation and error handling
+- Enhanced `updatePairingWithPhoto()` to track submission status properly
+- Added "waiting for partner" state with clear UI feedback
+- Implemented robust notification flow between paired users
+- Added proper completion flow that publishes to global feed
+
+#### 3. Feed System
+
+- Optimized `getFeed()` and `getGlobalFeed()` with batch fetching
+- Implemented `publishPairingToFeed()` for consistent feed publishing
+- Added proper tracking of likes and comments
+- Improved pagination performance
+
+#### 4. User Connections
+
+- Enhanced `updateConnection()` to handle mutual connections with atomic batch operations
+- Added proper connection count tracking
+- Updated `getAllUsers()` to fetch real users for the "Add Friends" feature
+- Implemented efficient friend search with proper indexing
+
+#### 5. Notification System
+
+- Fully implemented push notification system with Expo Notifications
+- Added various notification types (pairing, reminder, completion, social)
+- Implemented partner reminders in the pairing context
+- Added local notification scheduling capability
+
+#### 6. UI/UX Improvements
+
+- Replaced React Native's Image with Expo Image for better caching
+- Enhanced profile screens with real user data and pairing history
+- Added loading states and error handling throughout the app
+- Implemented user statistics for profiles
+
+## Architecture
+
+The app follows a service-oriented architecture with:
+
+- **Context Providers**: Auth, Pairing, and UI contexts for state management
+- **Service Layer**: Firebase, Pairing, User, Feed, and Notification services
+- **UI Layer**: Screen components with React Navigation
+- **Types**: Comprehensive TypeScript definitions
+
+## Firebase Security
+
+- Rules ensure users can only read/write their own data
+- Global feed entries only allow reads from authenticated users
+- Storage rules restrict uploads to authorized users
+- Batch operations maintain data consistency
+
+## Future Improvements
+
+- Implement real-time updates with Firestore listeners
+- Enhance feed filtering options
+- Improve notification delivery tracking
+- Add in-app notification center
+- Extend chat functionality with image sharing
+
+## Getting Started
+
+1. Clone the repository
+2. Run `npm install` to install dependencies
+3. Set up Firebase project and add configuration
+4. Run `npm start` to start the development server
+5. Use Expo Go app on your device or emulator to run the app
 
 ## 📱 Features
 

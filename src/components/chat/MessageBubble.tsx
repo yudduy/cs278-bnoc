@@ -11,10 +11,11 @@ import {
   StyleSheet
 } from 'react-native';
 import { COLORS, FONTS, BORDER_RADIUS } from '../../config/theme';
+import { Timestamp } from 'firebase/firestore';
 
 interface MessageBubbleProps {
   message: string;
-  timestamp: string | Date;
+  timestamp: string | Date | Timestamp;
   isCurrentUser: boolean;
 }
 
@@ -24,12 +25,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   isCurrentUser,
 }) => {
   // Format the timestamp
-  const formattedTime = timestamp instanceof Date 
-    ? timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : new Date(typeof timestamp === 'number' ? timestamp : timestamp).toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
+  const formattedTime = (() => {
+    if (timestamp instanceof Date) {
+      return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (timestamp instanceof Timestamp) {
+      return timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (typeof timestamp === 'number') {
+      return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+  })();
 
   return (
     <View style={[

@@ -1,6 +1,6 @@
 // src/services/userService.ts
 
-import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion, arrayRemove, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, arrayUnion, arrayRemove, Timestamp, writeBatch, increment } from 'firebase/firestore';
 import { User, NotificationSettings } from '../types';
 import { db } from '../config/firebase';
 
@@ -78,41 +78,98 @@ export const getCurrentUser = async (userId: string): Promise<User | null> => {
 };
 
 /**
- * Add/remove user from connections list
- * Makes the connection mutual - adds each user to the other's connections
+ * Update a connection between two users (add or remove)
  */
-export const updateConnection = async (currentUserId: string, targetUserId: string, action: 'add' | 'remove'): Promise<void> => {
-  // Get a reference to both users
-  const currentUserRef = doc(db, 'users', currentUserId);
-  const targetUserRef = doc(db, 'users', targetUserId);
-  
-  // Create a batch operation to ensure both updates happen together
-  const batch = writeBatch(db);
-  
-  if (action === 'add') {
-    // Add targetUser to currentUser's connections
-    batch.update(currentUserRef, {
-      connections: arrayUnion(targetUserId)
-    });
+export const updateConnection = async (
+  userId: string,
+  targetUserId: string,
+  action: 'add' | 'remove'
+): Promise<void> => {
+  try {
+    if (!userId || !targetUserId) {
+      throw new Error('Both user IDs are required');
+    }
     
-    // Add currentUser to targetUser's connections (mutual connection)
-    batch.update(targetUserRef, {
-      connections: arrayUnion(currentUserId)
-    });
-  } else if (action === 'remove') {
-    // Remove targetUser from currentUser's connections
-    batch.update(currentUserRef, {
-      connections: arrayRemove(targetUserId)
-    });
+    if (userId === targetUserId) {
+      throw new Error('Cannot connect a user to themselves');
+    }
     
-    // Remove currentUser from targetUser's connections (mutual removal)
-    batch.update(targetUserRef, {
-      connections: arrayRemove(currentUserId)
-    });
+    // References to both user documents
+    const userRef = doc(db, 'users', userId);
+    const targetUserRef = doc(db, 'users', targetUserId);
+    
+    // Verify both users exist
+    const [userDoc, targetUserDoc] = await Promise.all([
+      getDoc(userRef),
+      getDoc(targetUserRef)
+    ]);
+    
+    if (!userDoc.exists()) {
+      throw new Error(`User ${userId} does not exist`);
+    }
+    
+    if (!targetUserDoc.exists()) {
+      throw new Error(`Target user ${targetUserId} does not exist`);
+    }
+    
+    // Batch write to update both documents atomically
+    const batch = writeBatch(db);
+    
+    if (action === 'add') {
+      // Add connection to both users
+      batch.update(userRef, {
+        connections: arrayUnion(targetUserId),
+        connectionCount: increment(1)
+      });
+      
+      batch.update(targetUserRef, {
+        connections: arrayUnion(userId),
+        connectionCount: increment(1)
+      });
+      
+      console.log(`Adding connection between ${userId} and ${targetUserId}`);
+    } else {
+      // Remove connection from both users
+      // We need to manually handle array removal since arrayRemove might cause issues
+      // if the array doesn't contain the element
+      
+      const userData = userDoc.data();
+      const targetUserData = targetUserDoc.data();
+      
+      // Update user's connections
+      if (userData && Array.isArray(userData.connections)) {
+        const updatedConnections = userData.connections.filter(
+          (id: string) => id !== targetUserId
+        );
+        
+        batch.update(userRef, {
+          connections: updatedConnections,
+          connectionCount: increment(-1)
+        });
+      }
+      
+      // Update target user's connections
+      if (targetUserData && Array.isArray(targetUserData.connections)) {
+        const updatedTargetConnections = targetUserData.connections.filter(
+          (id: string) => id !== userId
+        );
+        
+        batch.update(targetUserRef, {
+          connections: updatedTargetConnections,
+          connectionCount: increment(-1)
+        });
+      }
+      
+      console.log(`Removing connection between ${userId} and ${targetUserId}`);
+    }
+    
+    // Commit the batch
+    await batch.commit();
+    console.log(`Successfully ${action === 'add' ? 'added' : 'removed'} connection between users`);
+  } catch (error) {
+    console.error(`Error ${action === 'add' ? 'adding' : 'removing'} connection:`, error);
+    throw error;
   }
-  
-  // Commit the batch
-  await batch.commit();
 };
 
 /**
@@ -193,4 +250,22 @@ export const updateUserFcmToken = async (userId: string, token: string): Promise
   await updateDoc(userRef, {
     fcmToken: token
   });
+};
+
+/**
+ * Get all users
+ */
+export const getAllUsers = async (): Promise<User[]> => {
+  try {
+    const usersCollection = collection(db, 'users');
+    const snapshot = await getDocs(usersCollection);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as User));
+  } catch (error) {
+    console.error('Error getting all users:', error);
+    return [];
+  }
 };

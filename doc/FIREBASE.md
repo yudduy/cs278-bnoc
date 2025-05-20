@@ -436,6 +436,13 @@ firebase-storage
         └── selfie.jpg          # Combined selfie (if applicable)
 ```
 
+Firebase Storage is used efficiently with the following optimizations:
+
+1. **Image Compression**: Images are compressed before upload using expo-image-manipulator
+2. **Upload Progress Tracking**: The storageService provides upload progress tracking
+3. **Efficient Image Loading**: The app uses expo-image for optimized image loading with caching
+4. **Specialized Upload Functions**: The storageService provides specialized functions for different image types
+
 Storage security rules:
 ```javascript
 rules_version = '2';
@@ -506,3 +513,6 @@ Create the following indexes for efficient queries:
 3. Optimize storage rules to minimize validation checks
 4. Use batched writes for updating multiple documents
 5. Consider using Firestore server timestamps for consistency
+6. Implement client-side image caching via expo-image for better performance
+7. Compress images before upload to reduce storage usage and improve load times
+8. Use proper error handling for all Firebase operations

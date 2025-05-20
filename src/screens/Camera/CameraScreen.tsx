@@ -16,7 +16,7 @@ import { COLORS, FONTS, BORDER_RADIUS, SHADOWS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import CameraCapture from '../../components/camera/Camera';
 import CameraPreview from '../../components/camera/CameraPreview';
-import { uploadImage } from '../../services/storageService';
+import { uploadPairingPhoto } from '../../services/storageService';
 import { CaptureResult } from '../../hooks/useCamera';
 import { MainStackParamList } from '../../types/navigation'; 
 
@@ -82,9 +82,17 @@ export default function CameraScreen() {
 
       try {
         console.log('Uploading image to Firebase Storage...');
-        const downloadURL = await uploadImage(imageUri, currentUserId, (progress) => {
+        // Use our enhanced uploadPairingPhoto function
+        const downloadURL = await uploadPairingPhoto(
+          imageUri,
+          pairingId,
+          currentUserId,
+          isPrivate,
+          (progress) => {
           setUploadProgress(progress);
-        });
+          }
+        );
+        
         console.log('Image uploaded successfully:', downloadURL);
         await firebaseService.updatePairingWithPhoto(pairingId, currentUserId, downloadURL, isPrivate);
         
@@ -145,6 +153,7 @@ export default function CameraScreen() {
           onSubmit={handlePreviewSubmit}
           onRetake={handlePreviewRetake}
           onCancel={handleCancel}
+          uploading={false}
         />
       );
     case 'uploading':
@@ -152,6 +161,16 @@ export default function CameraScreen() {
         <SafeAreaView style={styles.containerCentered}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.statusText}>Uploading: {uploadProgress.toFixed(0)}%</Text>
+          {uploadProgress > 0 && (
+            <View style={styles.progressBarContainer}>
+              <View 
+                style={[
+                  styles.progressBar, 
+                  { width: `${uploadProgress}%` }
+                ]} 
+              />
+            </View>
+          )}
         </SafeAreaView>
       );
     case 'error':
@@ -228,5 +247,17 @@ const styles = StyleSheet.create({
     color: COLORS.background, // Text on primary button (white) should be dark
     fontSize: 16,
     fontFamily: FONTS.bold, // Use theme font
+  },
+  progressBarContainer: {
+    width: '80%',
+    height: 10,
+    backgroundColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: 15,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: COLORS.primary,
   },
 });

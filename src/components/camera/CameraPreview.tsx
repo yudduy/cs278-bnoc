@@ -9,13 +9,13 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  Image, 
   TouchableOpacity, 
   ActivityIndicator,
   Alert,
   Switch,
   Platform
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../config/colors';
 import { globalStyles } from '../../styles/globalStyles';
@@ -58,7 +58,9 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
         <Image 
           source={{ uri: imageUri }} 
           style={styles.previewImage}
-          resizeMode="contain"
+          contentFit="contain"
+          transition={300}
+          cachePolicy="memory"
         />
       </View>
       

@@ -53,7 +53,7 @@ This document outlines the current project directory structure of the Daily Meet
 │   │   │   └── CameraPreview.tsx # Component for previewing the captured single photo
 │   │   ├── feed/               # Feed components
 │   │   │   ├── FeedList.tsx
-│   │   │   ├── PostCard.tsx    # Display for a completed pairing
+│   │   │   ├── PostCard.tsx    # Display for a completed pairing with image caching
 │   │   │   └── EmptyFeed.tsx   # Handles "Less than 5 friends" and "No Selfies Yet" states
 │   │   ├── comments/           # Comment components
 │   │   │   ├── CommentList.tsx
@@ -189,6 +189,7 @@ This document outlines the current project directory structure of the Daily Meet
 - **Camera.tsx**: Implements the single camera capture functionality using expo-camera.
 - **CameraPreview.tsx**: Allows users to review their captured photo before submitting.
 - **PairingCard.tsx**: Displays a pairing in the feed with user avatars, selfie, likes, and comments.
+- **PostCard.tsx**: Displays completed pairings in the feed with optimized image loading.
 - **FlakeStreakDisplay.tsx**: Visualizes the user's current flake streak with animations and contextual messages.
 
 ### Main Screens
@@ -216,7 +217,7 @@ This document outlines the current project directory structure of the Daily Meet
 4. **Organized Component Structure**: Components are organized by functionality (camera, feed, profile, etc.).
 5. **Cloud Functions**: Firebase Cloud Functions handle pairing algorithm and notifications.
 6. **Friend Connection System**: Users can add friends via mutual connections, with friendship status persisted in Firestore.
-7. **Optimized Feed System**: Uses an efficient data structure for better performance.
+7. **Optimized Feed System**: Uses an efficient data structure for better performance with optimized image loading and caching via expo-image.
 8. **Camera Utilities**: Camera-related utilities are organized in both top-level and subfolder locations.
 9. **Black and White Theme**: App-wide dark theme with white accents for a modern, premium feel.
 10. **Consistent Onboarding Flow**: Smooth, progressive onboarding experience with animated transitions.
@@ -225,6 +226,7 @@ This document outlines the current project directory structure of the Daily Meet
 13. **Error-Resilient Authentication**: Authentication system that gracefully handles initialization issues and provides fallbacks.
 14. **Real Firebase Authentication**: App now conditionally shows authentication screens or main app content based on the user's authenticated state. Uses real Firebase Authentication with Stanford email validation.
 15. **Empty State Screens**: Refined empty state screens for various user situations including "Less than 5 friends", "No Match Today", and "No Selfies Yet".
+16. **Optimized Image Handling**: Improved image loading and caching using expo-image for better performance and user experience.
 
 ## Key Component and Hook Details
 

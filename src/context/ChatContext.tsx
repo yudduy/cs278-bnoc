@@ -7,35 +7,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Alert } from 'react-native';
 import { ChatMessage } from '../types';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, collection, addDoc, query, orderBy, onSnapshot, doc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { db } from '../config/firebase';
 
-// Mock messages for immediate demo
-const MOCK_MESSAGES: ChatMessage[] = [
-  {
-    id: 'msg1',
-    chatRoomId: 'chat1',
-    senderId: 'user2',
-    text: 'Hey! Looking forward to our pairing today. What time works for you?',
-    createdAt: new Date(Date.now() - 3600000) as any, // 1 hour ago
-  },
-  {
-    id: 'msg2',
-    chatRoomId: 'chat1',
-    senderId: 'currentuser',
-    text: "Hi! I'm free after 3pm. How about you?",
-    createdAt: new Date(Date.now() - 3000000) as any, // 50 minutes ago
-  },
-  {
-    id: 'msg3',
-    chatRoomId: 'chat1',
-    senderId: 'user2',
-    text: '3pm works! Maybe we could do something outdoors?',
-    createdAt: new Date(Date.now() - 2400000) as any, // 40 minutes ago
-  }
-];
-
-// Context type definition based on update1.md
+// Context type definition
 interface ChatContextType {
   chatRoomId: string | null;
   messages: ChatMessage[];
@@ -64,13 +40,22 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState<boolean>(false);
+  const [unsubscribeListener, setUnsubscribeListener] = useState<(() => void) | null>(null);
   
   // Get auth context for user info
   const { user } = useAuth();
 
+  // Clean up listener when unmounting
+  useEffect(() => {
+    return () => {
+      if (unsubscribeListener) {
+        unsubscribeListener();
+      }
+    };
+  }, [unsubscribeListener]);
+
   /**
    * Loads messages for a specific pairing and sets up a real-time listener
-   * For demo purposes, returns mock messages
    */
   const loadMessagesForPairing = (pairingId: string, chatId: string): void => {
     if (!user?.id) {
@@ -82,29 +67,35 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       setIsLoadingMessages(true);
       setChatError(null);
       
+      // Clean up previous listener if exists
+      if (unsubscribeListener) {
+        unsubscribeListener();
+      }
+      
       // Set the active chat room ID
       setChatRoomId(chatId);
       
-      // For demo, use mock messages
-      setMessages(MOCK_MESSAGES);
+      // Set up a real-time listener for messages
+      const messagesRef = collection(db, 'chatRooms', chatId, 'messages');
+      const messagesQuery = query(messagesRef, orderBy('createdAt', 'asc'));
       
-      // In a real implementation, this would set up a real-time listener:
-      // const unsubscribe = firebase.firestore()
-      //   .collection('chatRooms')
-      //   .doc(chatId)
-      //   .collection('messages')
-      //   .orderBy('createdAt')
-      //   .onSnapshot(snapshot => {
-      //     const newMessages = snapshot.docs.map(doc => ({
-      //       id: doc.id,
-      //       ...doc.data()
-      //     }));
-      //     setMessages(newMessages);
-      //   });
+      const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+        const newMessages: ChatMessage[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        } as ChatMessage));
+        
+        setMessages(newMessages);
+        setIsLoadingMessages(false);
+      }, (error) => {
+        console.error('Error in chat listener:', error);
+        setChatError('Failed to load chat messages');
+        setIsLoadingMessages(false);
+      });
       
-      // Would return unsubscribe function to clean up listener when component unmounts
+      // Save unsubscribe function for cleanup
+      setUnsubscribeListener(() => unsubscribe);
       
-      setIsLoadingMessages(false);
     } catch (error) {
       console.error('Error loading messages:', error);
       setChatError('Failed to load chat messages');
@@ -125,28 +116,17 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       setIsSendingMessage(true);
       setChatError(null);
       
-      // Create a new message
-      const newMessage: ChatMessage = {
-        id: `msg${Date.now()}`,
+      // Add the message to Firestore
+      const messagesRef = collection(db, 'chatRooms', chatRoomId, 'messages');
+      await addDoc(messagesRef, {
         chatRoomId,
         senderId: user.id,
         text: text.trim(),
-        createdAt: Timestamp.now(),
-      };
+        createdAt: serverTimestamp(),
+      });
       
-      // For demo, just add to local state
-      setMessages(prevMessages => [...prevMessages, newMessage]);
-      
-      // In a real implementation, this would save to Firestore:
-      // await firebase.firestore()
-      //   .collection('chatRooms')
-      //   .doc(chatRoomId)
-      //   .collection('messages')
-      //   .add({
-      //     senderId: user.id,
-      //     text: text.trim(),
-      //     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      //   });
+      // Update last message in chat room
+      // In a real app, you'd also update the chat room doc with the last message
       
       setIsSendingMessage(false);
     } catch (error) {
@@ -160,6 +140,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
    * Clears the chat state (used when pairing changes or user logs out)
    */
   const clearChatState = (): void => {
+    // Clean up listener if exists
+    if (unsubscribeListener) {
+      unsubscribeListener();
+      setUnsubscribeListener(null);
+    }
+    
     setChatRoomId(null);
     setMessages([]);
     setChatError(null);

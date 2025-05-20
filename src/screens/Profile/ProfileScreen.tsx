@@ -9,7 +9,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
@@ -18,15 +17,21 @@ import {
   FlatList,
   StatusBar
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../config/theme';
 import { useAuth } from '../../context/AuthContext';
 import { usePairing } from '../../context/PairingContext';
-import { User, UserFeedItem } from '../../types';
+import { User, UserFeedItem, Pairing } from '../../types';
 import NavigationService from '../../navigation/NavigationService';
 import ProfileStatItem from '../../components/profile/ProfileStatItem';
 import { profileStyles as styles } from './ProfileStyles';
 import PostCard from '../../components/feed/PostCard';
+import * as pairingService from '../../services/pairingService';
+import * as userService from '../../services/userService';
+
+// Default profile image
+const DEFAULT_PROFILE_IMAGE = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fdefault-profile.jpg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 
 const ProfileScreen: React.FC = () => {
   // Auth and Pairing context
@@ -39,7 +44,8 @@ const ProfileScreen: React.FC = () => {
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [totalPairings, setTotalPairings] = useState(0);
   const [totalFlakes, setTotalFlakes] = useState(0);
-  const [recentPairings, setRecentPairings] = useState<UserFeedItem[]>([]);
+  const [recentPairings, setRecentPairings] = useState<Pairing[]>([]);
+  const [userStats, setUserStats] = useState<any>(null);
 
   // Navigate to settings
   const handleSettingsPress = () => {
@@ -66,51 +72,21 @@ const ProfileScreen: React.FC = () => {
     try {
       setLoading(true);
       
-      // Set profile user from auth context
-      setProfileUser(user);
+      // Fetch current user profile
+      const currentUser = await userService.getUserById(user.id);
+      if (currentUser) {
+        setProfileUser(currentUser);
+      }
       
-      // Mock data for stats (in real app, would fetch from Firestore)
-      setTotalPairings(15);
-      setTotalFlakes(3);
+      // Fetch user stats
+      const stats = await pairingService.getUserStats(user.id);
+      setUserStats(stats);
+      setTotalPairings(stats.totalPairings || 0);
+      setTotalFlakes(stats.flakedPairings || 0);
       
-      // Mock recent pairings (in real app, would fetch from Firestore)
-      const mockPairings: UserFeedItem[] = [
-        {
-          pairingId: 'pairing1',
-          date: new Date() as any,
-          user1_id: 'user1',
-          user2_id: user.id,
-          status: 'completed',
-          user1_photoURL: 'https://picsum.photos/300/400?random=1',
-          user2_photoURL: 'https://picsum.photos/300/400?random=2',
-          likesCount: 5,
-          commentsCount: 2
-        },
-        {
-          pairingId: 'pairing2',
-          date: new Date(Date.now() - 86400000) as any, // Yesterday
-          user1_id: user.id,
-          user2_id: 'user3',
-          status: 'completed',
-          user1_photoURL: 'https://picsum.photos/300/400?random=3',
-          user2_photoURL: 'https://picsum.photos/300/400?random=4',
-          likesCount: 3,
-          commentsCount: 1
-        },
-        {
-          pairingId: 'pairing3',
-          date: new Date(Date.now() - 172800000) as any, // 2 days ago
-          user1_id: 'user4',
-          user2_id: user.id,
-          status: 'completed',
-          user1_photoURL: 'https://picsum.photos/300/400?random=5',
-          user2_photoURL: 'https://picsum.photos/300/400?random=6',
-          likesCount: 7,
-          commentsCount: 4
-        }
-      ];
-      
-      setRecentPairings(mockPairings);
+      // Fetch recent pairings
+      const pairings = await pairingService.getUserPairingHistory(user.id, 3);
+      setRecentPairings(pairings);
     } catch (error) {
       console.error('Error loading profile data:', error);
     } finally {
@@ -152,30 +128,36 @@ const ProfileScreen: React.FC = () => {
     );
   }
   
-  // Render a pairing card
-  const renderPairingCard = ({ item }: { item: UserFeedItem }) => {
-    const imageURL = item.user1_id === user?.id ? item.user2_photoURL : item.user1_photoURL;
-    
-    // Get user information using mock data for now
-    const getMockUserInfo = (userId: string) => {
-      return {
-        id: userId,
-        username: userId === 'user1' ? 'justin' : userId === 'user3' ? 'duy' : userId === 'user4' ? 'vivian' : 'partner'
-      };
+  // Helper function to get user info for render
+  const getUsersForPairing = (pairing: Pairing): [any, any] => {
+    const user1 = {
+      id: pairing.user1_id,
+      username: 'User 1' // Placeholder until we have actual usernames
     };
     
-    const user1 = getMockUserInfo(item.user1_id);
-    const user2 = getMockUserInfo(item.user2_id);
-
+    const user2 = {
+      id: pairing.user2_id,
+      username: 'User 2' // Placeholder until we have actual usernames
+    };
+    
+    return [user1, user2];
+  };
+  
+  // Render a pairing card
+  const renderPairingCard = ({ item }: { item: Pairing }) => {
+    // Determine which user photo to show (partner's photo)
+    const imageURL = item.user1_id === user?.id ? item.user2_photoURL : item.user1_photoURL;
+    const users = getUsersForPairing(item);
+    
     return (
       <PostCard
-        id={item.pairingId}
-        users={[user1, user2]}
-        imageURL={imageURL || 'https://picsum.photos/300/400?random=7'}
-        timestamp={new Date(item.date)}
+        id={item.id}
+        users={users}
+        imageURL={imageURL || DEFAULT_PROFILE_IMAGE}
+        timestamp={item.date.toDate()}
         likesCount={item.likesCount}
         commentsCount={item.commentsCount}
-        onOptions={() => handlePairingDetail(item.pairingId)}
+        onOptions={() => handlePairingDetail(item.id)}
         onLike={() => {}}
         onReact={() => {}}
       />
@@ -217,10 +199,12 @@ const ProfileScreen: React.FC = () => {
             {/* Profile Image */}
             <View style={styles.profileImageContainer}>
               <Image 
-                source={profileUser?.photoURL 
-                  ? { uri: profileUser.photoURL } 
-                  : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }}
+                source={{ uri: profileUser?.photoURL || DEFAULT_PROFILE_IMAGE }}
                 style={styles.profileImage}
+                contentFit="cover"
+                transition={300}
+                cachePolicy="memory-disk"
+                placeholder={{ uri: profileUser?.photoURL || DEFAULT_PROFILE_IMAGE }}
               />
             </View>
             
@@ -282,7 +266,7 @@ const ProfileScreen: React.FC = () => {
             <FlatList
               data={recentPairings}
               renderItem={renderPairingCard}
-              keyExtractor={(item) => item.pairingId}
+              keyExtractor={(item) => item.id}
               scrollEnabled={false}
               showsVerticalScrollIndicator={false}
             />

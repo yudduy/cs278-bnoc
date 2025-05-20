@@ -15,8 +15,10 @@ import { Pairing, SubmitPhotoParams, Comment } from '../types';
 interface PairingContextType {
   // Current pairing state
   currentPairing: Pairing | null;
-  pairingStatus: 'idle' | 'loading' | 'uploading' | 'completed' | 'error';
+  pairingStatus: 'idle' | 'loading' | 'uploading' | 'waiting' | 'completed' | 'error';
   pairingError: string | null;
+  waitingForUser: string | null; // ID of the user we're waiting for
+  partnerUsername: string | null; // Username of the partner
   
   // History
   pairingHistory: Pairing[];
@@ -44,10 +46,12 @@ interface PairingProviderProps {
 export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) => {
   // State for pairing management
   const [currentPairing, setCurrentPairing] = useState<Pairing | null>(null);
-  const [pairingStatus, setPairingStatus] = useState<'idle' | 'loading' | 'uploading' | 'completed' | 'error'>('idle');
+  const [pairingStatus, setPairingStatus] = useState<'idle' | 'loading' | 'uploading' | 'waiting' | 'completed' | 'error'>('idle');
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [pairingHistory, setPairingHistory] = useState<Pairing[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
+  const [waitingForUser, setWaitingForUser] = useState<string | null>(null);
+  const [partnerUsername, setPartnerUsername] = useState<string | null>(null);
   
   // Get auth context
   const { user } = useAuth();
@@ -75,14 +79,37 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     try {
       setPairingStatus('loading');
       setPairingError(null);
+      setWaitingForUser(null);
+      setPartnerUsername(null);
       
       // Fetch the current pairing from Firebase
       const pairing = await firebaseService.getCurrentPairing(user.id);
       setCurrentPairing(pairing);
       
       // Update status based on pairing state
-      if (pairing?.status === 'completed') {
-        setPairingStatus('completed');
+      if (pairing) {
+        // Determine the partner's ID
+        const partnerId = pairing.user1_id === user.id ? pairing.user2_id : pairing.user1_id;
+        
+        // Fetch the partner's profile to get their username
+        const partnerUser = await firebaseService.getUserById(partnerId);
+        if (partnerUser) {
+          setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+        }
+        
+        if (pairing.status === 'completed') {
+          setPairingStatus('completed');
+        } else if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
+          // Current user has submitted, waiting for partner
+          setPairingStatus('waiting');
+          setWaitingForUser(pairing.user2_id);
+        } else if (pairing.status === 'user2_submitted' && pairing.user2_id === user.id) {
+          // Current user has submitted, waiting for partner
+          setPairingStatus('waiting');
+          setWaitingForUser(pairing.user1_id);
+        } else {
+          setPairingStatus('idle');
+        }
       } else {
         setPairingStatus('idle');
       }
@@ -144,8 +171,35 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       
       // Update status based on new pairing state
       const refreshedPairing = await firebaseService.getPairingById(currentPairing.id);
-      if (refreshedPairing?.status === 'completed') {
-        setPairingStatus('completed');
+      if (refreshedPairing) {
+        if (refreshedPairing.status === 'completed') {
+          setPairingStatus('completed');
+        } else {
+          // Determine if we're waiting for the partner
+          const isUser1 = refreshedPairing.user1_id === user.id;
+          const isUser2 = refreshedPairing.user2_id === user.id;
+          const partnerId = isUser1 ? refreshedPairing.user2_id : refreshedPairing.user1_id;
+          
+          if ((isUser1 && refreshedPairing.status === 'user1_submitted') ||
+              (isUser2 && refreshedPairing.status === 'user2_submitted')) {
+            setPairingStatus('waiting');
+            setWaitingForUser(partnerId);
+            
+            // Fetch partner username if not already set
+            if (!partnerUsername) {
+              try {
+                const partnerUser = await firebaseService.getUserById(partnerId);
+                if (partnerUser) {
+                  setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+                }
+              } catch (error) {
+                console.error('Error fetching partner username:', error);
+              }
+            }
+          } else {
+            setPairingStatus('idle');
+          }
+        }
       } else {
         setPairingStatus('idle');
       }
@@ -214,16 +268,31 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
    */
   const sendReminder = async (pairingId: string, partnerId: string): Promise<void> => {
     if (!user?.id) {
+      setPairingError('User not authenticated');
       return;
     }
     
     try {
-      // Use Firebase service to send the reminder
+      // Start loading state
+      setPairingStatus('loading');
+      
+      // Call the notification service to send reminder
       await firebaseService.sendPairingReminder(pairingId, user.id, partnerId);
-      Alert.alert('Success', 'Reminder sent to your partner');
+      
+      // Show confirmation to user
+      Alert.alert('Reminder Sent', 'A reminder has been sent to your partner.');
+      
+      // Reset status
+      if (currentPairing?.status === 'user1_submitted' || currentPairing?.status === 'user2_submitted') {
+        setPairingStatus('waiting');
+      } else {
+        setPairingStatus('idle');
+      }
     } catch (error) {
       console.error('Error sending reminder:', error);
-      Alert.alert('Error', 'Failed to send reminder');
+      setPairingError('Failed to send reminder. Please try again.');
+      setPairingStatus('error');
+      Alert.alert('Error', 'Failed to send reminder. Please try again.');
     }
   };
   
@@ -240,6 +309,8 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     currentPairing,
     pairingStatus,
     pairingError,
+    waitingForUser,
+    partnerUsername,
     pairingHistory,
     historyLoading,
     loadCurrentPairing,

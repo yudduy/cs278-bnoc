@@ -1,136 +1,265 @@
 import firebaseApp from '../config/firebase'; // Changed to default import
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 const storage = getStorage(firebaseApp);
 
 /**
- * Uploads an image to Firebase Storage.
+ * Compresses an image before upload to save storage and bandwidth
  * @param imageUri The local URI of the image file.
- * @param userId The ID of the user uploading the image.
- * @param onProgress Optional callback to track upload progress.
- * @returns Promise resolving to the download URL of the uploaded image.
+ * @param options Optional parameters for compression
+ * @returns Promise resolving to the URI of the compressed image
  */
-export const uploadImage = async (
+export const compressImage = async (
+  imageUri: string,
+  options?: {
+    width?: number;
+    height?: number;
+    quality?: number;
+    resizeMode?: 'contain' | 'cover' | 'stretch';
+  }
+): Promise<string> => {
+  try {
+    // Default values with reasonable defaults
+    const width = options?.width || 1080; // Default to 1080px width
+    const height = options?.height;
+    const quality = options?.quality || 0.8; // 80% quality
+    const resizeMode = options?.resizeMode || 'contain';
+    
+    // Prepare resize action based on provided parameters
+    const resizeAction: ImageManipulator.Action = {
+      resize: {
+        width,
+        height,
+      },
+    };
+    
+    // If no height provided, remove it to maintain aspect ratio
+    if (!height) {
+      delete resizeAction.resize.height;
+    }
+    
+    // Perform image manipulation
+    const result = await ImageManipulator.manipulateAsync(
+      imageUri,
+      [resizeAction],
+      {
+        compress: quality,
+        format: ImageManipulator.SaveFormat.JPEG,
+      }
+    );
+    
+    console.log('Image compressed successfully', {
+      originalUri: imageUri,
+      compressedUri: result.uri,
+      width: result.width,
+      height: result.height,
+    });
+    
+    return result.uri;
+  } catch (error) {
+    console.error('Error compressing image:', error);
+    // Return original image if compression fails
+    return imageUri;
+  }
+};
+
+/**
+ * Uploads a user profile image to Firebase Storage
+ * @param imageUri The local URI of the image file
+ * @param userId The user's ID
+ * @param onProgress Optional callback for upload progress
+ * @returns Promise resolving to the download URL
+ */
+export const uploadUserProfileImage = async (
   imageUri: string,
   userId: string,
   onProgress?: (progress: number) => void
 ): Promise<string> => {
-  if (!userId) {
-    throw new Error('User ID is required to upload an image.');
+  try {
+    // Compress the image with profile photo-specific settings
+    const compressedUri = await compressImage(imageUri, {
+      width: 500, // Profile images can be smaller
+      quality: 0.8,
+    });
+    
+    // Upload to a user-specific profile path
+    const path = `users/${userId}/profile.jpg`;
+    
+    // Use the basic upload function with the compressed image
+    return await uploadImage(
+      compressedUri, 
+      path, 
+      {
+        contentType: 'image/jpeg',
+        customMetadata: {
+          userId,
+          purpose: 'profile',
+          timestamp: new Date().toISOString(),
+        },
+        onProgress,
+      }
+    );
+  } catch (error) {
+    console.error('Error uploading profile image:', error);
+    throw error;
   }
+};
 
-  console.log('imageUri:', imageUri);
-  const response = await fetch(imageUri);
+/**
+ * Uploads a pairing selfie to Firebase Storage
+ * @param imageUri The local URI of the image file
+ * @param pairingId The pairing ID
+ * @param userId The user's ID who uploaded the image
+ * @param isPrivate Whether the image should be private or not
+ * @param onProgress Optional callback for upload progress
+ * @returns Promise resolving to the download URL
+ */
+export const uploadPairingPhoto = async (
+  imageUri: string,
+  pairingId: string,
+  userId: string,
+  isPrivate: boolean = false,
+  onProgress?: (progress: number) => void
+): Promise<string> => {
+  try {
+    // Compress the image with pairing photo-specific settings
+    const compressedUri = await compressImage(imageUri, {
+      width: 1200, // Higher quality for pairing photos
+      quality: 0.85,
+    });
+    
+    // Upload to a pairing-specific path
+    const fileName = `user_${userId}_${Date.now()}.jpg`;
+    const path = `pairings/${pairingId}/${fileName}`;
+    
+    // Use the basic upload function with the compressed image
+    return await uploadImage(
+      compressedUri, 
+      path, 
+      {
+        contentType: 'image/jpeg',
+        customMetadata: {
+          pairingId,
+          userId,
+          isPrivate: isPrivate.toString(),
+          purpose: 'pairingPhoto',
+          timestamp: new Date().toISOString(),
+        },
+        onProgress,
+      }
+    );
+  } catch (error) {
+    console.error('Error uploading pairing photo:', error);
+    throw error;
+  }
+};
+
+/**
+ * Generic function to upload any image to Firebase Storage
+ * @param uri The local URI of the image file
+ * @param storagePath The path in Firebase Storage to upload to
+ * @param options Additional options for the upload
+ * @returns Promise resolving to the download URL
+ */
+export const uploadImage = async (
+  uri: string,
+  storagePath: string,
+  options?: {
+    contentType?: string;
+    customMetadata?: Record<string, string>;
+    onProgress?: (progress: number) => void;
+  }
+): Promise<string> => {
+  try {
+    // Create a storage reference
+    const storageRef = ref(storage, storagePath);
+    
+    // Fetch the image as a blob
+    const response = await fetch(uri);
   const blob = await response.blob();
-  console.log('blob:', blob);
-  console.log('blob size:', blob.size);
-  console.log('blob type:', blob.type);
-
-  const fileExtension = imageUri.split('.').pop() || 'jpg';
-  const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExtension}`;
-  const storagePath = `photos/${userId}/${fileName}`;
-  const imageRef = ref(storage, storagePath);
-  console.log('imageRef:', imageRef);
+    
+    // Set up the upload task
+    const uploadTask = uploadBytesResumable(storageRef, blob, {
+      contentType: options?.contentType || 'image/jpeg',
+      customMetadata: options?.customMetadata,
+    });
+    
+    // Return a promise that resolves with the download URL when the upload completes
   return new Promise((resolve, reject) => {
-    const uploadTask = uploadBytesResumable(imageRef, blob);
-
     uploadTask.on(
       'state_changed',
       (snapshot) => {
+          // Calculate and report progress
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        if (onProgress) {
-          onProgress(progress);
-        }
+          options?.onProgress?.(progress);
       },
       (error) => {
-        console.error('Upload failed. Full error object:', JSON.stringify(error, null, 2)); // Log the whole error object
-        if (error.serverResponse) {
-          console.error('Detailed server response:', error.serverResponse);
-        }
+          // Handle errors
         console.error('Upload failed:', error);
         reject(error);
       },
       async () => {
+          // Upload completed successfully, get the download URL
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
           resolve(downloadURL);
         } catch (error) {
-          console.error('Failed to get download URL:', error);
+            console.error('Error getting download URL:', error);
           reject(error);
         }
       }
     );
   });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  }
 };
 
 /**
- * Retrieves all photo URLs for a given user.
- * Sorts by upload time descending (most recent first) based on filename convention.
- * @param userId The ID of the user.
- * @returns Promise resolving to an array of photo download URLs.
+ * Lists all images in a directory in Firebase Storage
+ * @param path The path in Firebase Storage
+ * @returns Promise resolving to an array of download URLs
  */
-export const getUserPhotos = async (userId: string): Promise<string[]> => {
-  if (!userId) {
-    console.warn('No user ID provided to getUserPhotos');
-    return [];
-  }
-  const userPhotosRef = ref(storage, `photos/${userId}`);
+export const listImages = async (path: string): Promise<string[]> => {
   try {
-    const result = await listAll(userPhotosRef);
+    const storageRef = ref(storage, path);
+    const result = await listAll(storageRef);
+    
     const urlPromises = result.items.map((itemRef) => getDownloadURL(itemRef));
-    const urls = await Promise.all(urlPromises);
-
-    // Sort URLs: filenames start with timestamp, so string sort works for recency
-    // Caveat: this relies on filenames like YYYY-MM-DDTHH:MM:SS.sssZ_name.jpg or timestamp_name.jpg
-    // The current implementation uses Date.now() which is fine for sorting.
-    return urls.sort((a, b) => {
-      const fileA = a.split('/').pop()?.split('?')[0] || '';
-      const fileB = b.split('/').pop()?.split('?')[0] || '';
-      return fileB.localeCompare(fileA); // Sorts descending by filename
-    });
+    return await Promise.all(urlPromises);
   } catch (error) {
-    console.error('Error fetching user photos:', error);
-    return [];
+    console.error('Error listing images:', error);
+    throw error;
   }
 };
 
 /**
- * Retrieves the most recent photo URL for a given user.
- * @param userId The ID of the user.
- * @returns Promise resolving to the download URL of the most recent photo, or null if none found.
+ * Deletes an image from Firebase Storage
+ * @param url The download URL of the image
+ * @returns Promise resolving when the image is deleted
  */
-export const getMostRecentUserPhoto = async (userId: string): Promise<string | null> => {
-  const photos = await getUserPhotos(userId);
-  return photos.length > 0 ? photos[0] : null;
-};
-
-/**
- * Deletes a photo from Firebase Storage given its download URL.
- * This is a more complex operation as it requires parsing the storage path from the URL.
- * @param photoUrl The download URL of the photo to delete.
- * @returns Promise resolving when deletion is complete.
- */
-export const deleteUserPhotoByUrl = async (photoUrl: string): Promise<void> => {
+export const deleteImage = async (url: string): Promise<void> => {
   try {
-    // Firebase storage download URLs have a specific format.
-    // We need to extract the path from the URL.
-    // Example URL: https://firebasestorage.googleapis.com/v0/b/your-project-id.appspot.com/o/photos%2FuserId%2Ffilename.jpg?alt=media&token=...
-    // The path is photos/userId/filename.jpg (after decoding %2F to /)
-    const decodedUrl = decodeURIComponent(photoUrl);
-    const pathRegex = /\/o\/(.*?)\?alt=media/;
-    const match = decodedUrl.match(pathRegex);
-
-    if (match && match[1]) {
-      const filePath = match[1];
-      const photoRef = ref(storage, filePath);
-      await deleteObject(photoRef);
-      console.log('Photo deleted successfully:', filePath);
-    } else {
-      throw new Error('Could not extract file path from URL.');
-    }
+    // Get the storage reference from the URL
+    const imageRef = ref(storage, url);
+    
+    // Delete the file
+    await deleteObject(imageRef);
+    console.log('Image deleted successfully');
   } catch (error) {
-    console.error('Error deleting photo by URL:', error);
-    throw error; // Re-throw to allow caller to handle
+    console.error('Error deleting image:', error);
+    throw error;
   }
+};
+
+export default {
+  uploadImage,
+  uploadUserProfileImage,
+  uploadPairingPhoto,
+  compressImage,
+  listImages,
+  deleteImage,
 }; 
