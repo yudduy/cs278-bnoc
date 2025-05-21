@@ -1,6 +1,6 @@
 // src/services/pairingService.ts
 
-import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, arrayUnion, Timestamp, DocumentSnapshot, increment, startAfter, QueryConstraint, deleteDoc, documentId, arrayRemove, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, arrayUnion, Timestamp, DocumentSnapshot, increment, startAfter, QueryConstraint, deleteDoc, documentId, arrayRemove, writeBatch, runTransaction } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { Pairing, Comment, User, PairingFeedItem, UserProfile } from '../types';
@@ -49,7 +49,7 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     
     // Validate that the pairing data has the required fields
     if (!pairingData || !pairingData.users || !Array.isArray(pairingData.users)) {
-      logger.error(`Invalid pairing data for pairing ${pairingDoc.id}:`, pairingData);
+      logger.error(`Invalid pairing data for pairing ${pairingDoc.id}:${JSON.stringify(pairingData)}`);
       return null;
     }
     
@@ -255,98 +255,22 @@ export const getRecentPairingsFeed = async (
   }
 };
 
-
 /**
- * DEPRECATED / NEEDS REVIEW: Original completePairing for dual camera system.
+ * DEPRECATED: Remove this function once all code is updated to use the new single camera flow.
  * The new flow uses storageService.uploadImage then pairingService.updatePairingWithPhoto.
  */
 export const completePairing = async (
   pairingId: string,
   userId: string,
-  frontImage: string,
-  backImage: string,
+  photoUrl: string,
   isPrivate: boolean
 ): Promise<void> => {
-  logger.warn("DEPRECATED: completePairing is called. Review for new single camera flow.");
+  logger.warn("DEPRECATED: completePairing is called. Use updatePairingWithPhoto instead.");
   try {
-    // Check if user is part of this pairing
-    const pairingDoc = await getDoc(doc(db, 'pairings', pairingId));
-    if (!pairingDoc.exists()) throw new Error('Pairing not found');
-    
-    const pairingData = pairingDoc.data();
-    if (!pairingData?.users.includes(userId)) {
-      throw new Error('User not part of this pairing or pairing data missing');
-    }
-    
-    // Check which user this is (user1 or user2)
-    const isUser1 = pairingData.user1_id === userId;
-    const isUser2 = pairingData.user2_id === userId;
-    
-    if (!isUser1 && !isUser2) {
-      throw new Error('User not properly assigned in pairing');
-    }
-    
-    // Upload images to storage
-    let frontImageURL = '';
-    let backImageURL = '';
-    
-    // Handle front image
-    if (frontImage) {
-      const frontImageRef = ref(storage, `pairings/${pairingId}/${userId}_photo.jpg`);
-      const frontImageBlob = await (await fetch(frontImage)).blob();
-      await uploadBytes(frontImageRef, frontImageBlob);
-      frontImageURL = await getDownloadURL(frontImageRef);
-    }
-    
-    // Handle back image
-    if (backImage) {
-      const backImageRef = ref(storage, `pairings/${pairingId}/${userId}_photo.jpg`);
-      const backImageBlob = await (await fetch(backImage)).blob();
-      await uploadBytes(backImageRef, backImageBlob);
-      backImageURL = await getDownloadURL(backImageRef);
-    }
-    
-    // Update the pairing document
-    const updateData: any = {
-      isPrivate
-    };
-    
-    if (isUser1) {
-      updateData.user1_photoURL = frontImageURL;
-      updateData.user1_submittedAt = Timestamp.now();
-    } else {
-      updateData.user2_photoURL = frontImageURL;
-      updateData.user2_submittedAt = Timestamp.now();
-    }
-    
-    await updateDoc(doc(db, 'pairings', pairingId), updateData);
-    
-    // Check if both users have submitted photos, and if so, mark as completed
-    const updatedPairingDoc = await getDoc(doc(db, 'pairings', pairingId));
-    const updatedPairing = updatedPairingDoc.data();
-    
-    if (updatedPairing && updatedPairing.user1_photoURL && updatedPairing.user2_photoURL) {
-      await updateDoc(doc(db, 'pairings', pairingId), {
-        status: 'completed',
-        completedAt: Timestamp.now(),
-        // In a real implementation, you might generate a combined selfie here
-        selfieURL: frontImageURL // For simplicity, use the front image
-      });
-      
-      // If not private, add to global feed
-      if (!isPrivate) {
-        await addDoc(collection(db, 'globalFeed'), {
-          pairingId,
-          date: updatedPairing.date,
-          users: updatedPairing.users,
-          selfieURL: frontImageURL,
-          likes: 0,
-          commentCount: 0
-        });
-      }
-    }
+    // Delegate to the new implementation
+    await updatePairingWithPhoto(pairingId, userId, photoUrl, isPrivate);
   } catch (error) {
-    logger.error('Error in deprecated completePairing:', error);
+    logger.error(`Error in deprecated completePairing:`, error);
     throw error;
   }
 };
@@ -498,62 +422,53 @@ export const updatePairingWithPhoto = async (
 };
 
 /**
- * Toggle like on a pairing
+ * Toggle like on a pairing using Firestore transactions for atomicity
+ * @param pairingId - ID of the pairing to toggle like
+ * @param userId - ID of the user toggling the like
+ * @returns Promise resolving to a boolean indicating if the pairing is now liked by the user
  */
 export const toggleLikePairing = async (pairingId: string, userId: string): Promise<boolean> => {
   if (!pairingId || !userId) {
-    logger.error('toggleLikePairing called with invalid parameters', { pairingId, userId });
+    logger.error(`Invalid parameters for toggleLikePairing: pairingId and userId are required`, { pairingId, userId });
     throw new Error('Invalid parameters for toggleLikePairing: pairingId and userId are required');
   }
 
   try {
     const pairingRef = doc(db, 'pairings', pairingId);
-    const pairingDoc = await getDoc(pairingRef);
     
-    if (!pairingDoc.exists()) {
-      logger.warn(`toggleLikePairing: Pairing not found with ID ${pairingId}`);
-      throw new Error(`Pairing not found with ID ${pairingId}`);
-    }
+    // Use runTransaction to ensure atomicity
+    const result = await runTransaction(db, async (transaction) => {
+      const pairingDoc = await transaction.get(pairingRef);
+      
+      if (!pairingDoc.exists()) {
+        logger.warn(`Pairing not found with ID ${pairingId}`);
+        throw new Error(`Pairing not found with ID ${pairingId}`);
+      }
+      
+      const pairingData = pairingDoc.data();
+      const likedBy = pairingData.likedBy || [];
+      const isCurrentlyLiked = likedBy.includes(userId);
+      
+      if (isCurrentlyLiked) {
+        // Remove like - use arrayRemove for atomic removal
+        transaction.update(pairingRef, {
+          likedBy: arrayRemove(userId),
+          likesCount: increment(-1)
+        });
+        logger.debug(`User ${userId} removed like from pairing ${pairingId}`);
+        return false;
+      } else {
+        // Add like - use arrayUnion for atomic addition 
+        transaction.update(pairingRef, {
+          likedBy: arrayUnion(userId),
+          likesCount: increment(1)
+        });
+        logger.debug(`User ${userId} liked pairing ${pairingId}`);
+        return true;
+      }
+    });
     
-    const pairingData = pairingDoc.data();
-    if (!pairingData) {
-      logger.warn(`toggleLikePairing: Pairing data is empty for ID ${pairingId}`);
-      throw new Error('Pairing data not found');
-    }
-    
-    const likedBy = pairingData.likedBy || [];
-    let newLikesCount = pairingData.likesCount || 0;
-    let isLiked = false;
-    
-    // Use a batch operation for atomic updates
-    const batch = writeBatch(db);
-    
-    if (likedBy.includes(userId)) {
-      // Remove like
-      const updatedLikedBy = likedBy.filter((id: string) => id !== userId);
-      newLikesCount = Math.max(0, newLikesCount - 1);
-      batch.update(pairingRef, {
-        likedBy: updatedLikedBy,
-        likesCount: newLikesCount
-      });
-      isLiked = false;
-      logger.debug(`User ${userId} removed like from pairing ${pairingId}`);
-    } else {
-      // Add like
-      const updatedLikedBy = [...likedBy, userId];
-      newLikesCount += 1;
-      batch.update(pairingRef, {
-        likedBy: updatedLikedBy,
-        likesCount: newLikesCount
-      });
-      isLiked = true;
-      logger.debug(`User ${userId} liked pairing ${pairingId}`);
-    }
-    
-    // Commit the batch
-    await batch.commit();
-    
-    return isLiked;
+    return result;
   } catch (error) {
     logger.error(`Error toggling like for pairing ${pairingId} by user ${userId}:`, error);
     throw error;

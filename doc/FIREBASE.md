@@ -507,8 +507,7 @@ firebase-storage
 │   └── {userId}.jpg        # User profile image
 └── pairing_photos/         # Photos for pairings
     └── {pairingId}/        # Photos for a specific pairing
-        ├── {userId}_front.jpg  # Front camera photo
-        └── selfie.jpg          # Combined selfie (if applicable)
+        └── {userId}.jpg    # User's photo for the pairing
 ```
 
 Firebase Storage is used efficiently with the following optimizations:
@@ -590,6 +589,7 @@ The Firebase configuration has been consolidated and streamlined:
 1. **Single Initialization Point**: Firebase is now initialized only in `src/config/firebaseInit.ts`
 2. **Re-export Pattern**: `src/config/firebase.ts` now re-exports from the initialization file
 3. **Robust Error Handling**: Initialization includes comprehensive error handling with fallbacks
+4. **Type Safety**: Added proper typing for Firebase services
 
 ### 2. Service Method Signature Standardization
 
@@ -616,6 +616,17 @@ Several performance optimizations have been implemented:
 2. **Query Limiting**: All list operations include limits to prevent excessive data transfer
 3. **Field Selection**: Queries now specify only needed fields when possible
 4. **Index Optimization**: Queries are designed to use existing indexes effectively
+5. **Atomic Operations**: Implemented atomic operations for likes and comments to prevent race conditions
+6. **Transaction Support**: Added transaction support for critical operations like toggling likes
+
+### 5. Single Camera System
+
+The app has been updated to use a single camera system:
+
+1. **Simplified Data Model**: Removed separate front/back image fields in favor of a single photo URL
+2. **Streamlined Upload Process**: Updated storage paths to work with the single photo approach
+3. **Backward Compatibility**: Added a backwards-compatible `completePairing` function that delegates to the new implementation
+4. **Improved Status Tracking**: Enhanced status tracking to monitor submission progress more clearly
 
 ## Performance Considerations
 
@@ -623,7 +634,8 @@ Several performance optimizations have been implemented:
 2. Create composite indexes for complex queries
 3. Optimize storage rules to minimize validation checks
 4. Use batched writes for updating multiple documents
-5. Consider using Firestore server timestamps for consistency
-6. Implement client-side image caching via expo-image for better performance
-7. Compress images before upload to reduce storage usage and improve load times
-8. Use proper error handling for all Firebase operations
+5. Consider using Firestore's atomic operations (arrayUnion, arrayRemove, increment) for concurrency safety
+6. Use transactions for operations that need to be atomic
+7. Implement client-side image caching via expo-image for better performance
+8. Compress images before upload to reduce storage usage and improve load times
+9. Use proper error handling for all Firebase operations

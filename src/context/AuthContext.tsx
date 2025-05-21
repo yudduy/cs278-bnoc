@@ -122,7 +122,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setError(null);
       
       // Basic validation
-      if (!email.endsWith('@stanford.edu')) {
+      if (!email.toLowerCase().endsWith('@stanford.edu')) {
         setError('Please use a Stanford email address');
         setIsLoading(false);
         return;
@@ -203,7 +203,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       // Basic validation
-      if (!email.endsWith('@stanford.edu')) {
+      if (!email.toLowerCase().endsWith('@stanford.edu')) {
         setError('Please use a Stanford email address');
         setIsLoading(false);
         return;
@@ -230,9 +230,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Update user profile method
   const updateUserProfile = async (data: Partial<User>) => {
     if (!user || !user.id) {
+      setIsLoading(true);
       const errorMsg = 'Cannot update profile: No user authenticated';
       logger.error(errorMsg);
       setError(errorMsg);
+      setIsLoading(false);
       return;
     }
     

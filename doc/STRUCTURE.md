@@ -236,7 +236,7 @@ This document outlines the current project directory structure of the Daily Meet
 
 ## Current Architecture Components
 
-1. **Single Camera System**: Uses expo-camera with the `useCamera` hook and `Camera.tsx` component.
+1. **Single Camera System**: Uses expo-camera with the `useCamera` hook and `Camera.tsx` component. The app now captures a single photo rather than front and back images.
 2. **Robust Firebase Integration**: Centralizes Firebase access through the `firebase.ts` service with initialization in `firebaseInit.ts` and context provision via `FirebaseProvider.tsx`. Includes fallback mechanisms for handling initialization failures.
 3. **Enhanced User Model**: Includes fields for flake streak tracking, notification settings, friend connections, and blocked users.
 4. **Organized Component Structure**: Components are organized by functionality (camera, feed, profile, etc.).
@@ -393,5 +393,20 @@ The camera system supports features like:
    - Updated imports in components to use canonical sources
    - Removed usage of deprecated hooks (useAuth from hooks directory)
    - Ensured consistent error handling through logger utility
+
+5. **Firebase Initialization Improvements**:
+   - Fixed double initialization issue in `src/config/firebaseInit.ts`
+   - Enhanced error handling with proper fallbacks
+   - Improved Firebase service export pattern
+
+6. **Deprecated Old Dual-Camera Implementation**:
+   - Updated `completePairing` function to work with the single camera system
+   - Standardized photo submission flow with `updatePairingWithPhoto` function
+   - Added proper backward compatibility for existing code
+
+7. **Enhanced Atomic Operations**:
+   - Improved the like toggle functionality to use Firestore transactions
+   - Prevented race conditions and inconsistent state
+   - Utilized Firebase's atomic array operations for better performance
 
 These optimizations have reduced code duplication, improved type safety, and established clear patterns for future development. The architecture now has clearer boundaries between components, more consistent error handling, and better-organized utility functions.

@@ -4,9 +4,9 @@
  * This file handles Firebase initialization without Auth-specific code.
  */
 
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getFirestore, Firestore } from 'firebase/firestore';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 import logger from '../utils/logger';
 
 // Firebase configuration
@@ -20,44 +20,54 @@ const firebaseConfig = {
   databaseURL: "https://stone-bison-446302-p0-default-rtdb.firebaseio.com"
 };
 
-// Initialize the app
-let firestoreDb: any;
-let _storage: any;
+// Initialize with empty defaults to avoid "used before assigned" errors
+let firebaseAppInstance: FirebaseApp;
+let firestoreDb: Firestore;
+let storageInstance: FirebaseStorage;
 
+// Initialize Firebase app
 try {
   // Initialize Firebase app if it hasn't been initialized yet
   if (!getApps().length) {
-    initializeApp(firebaseConfig);
+    firebaseAppInstance = initializeApp(firebaseConfig);
     logger.info('Firebase app initialized successfully');
+  } else {
+    firebaseAppInstance = getApp(); // Get the existing app instance
+    logger.info('Using existing Firebase app instance');
   }
-  
-  // Initialize Firestore
+} catch (error) {
+  logger.error('Error initializing Firebase app:', error);
+  firebaseAppInstance = {} as FirebaseApp;
+}
+
+// Initialize Firestore
+try {
   firestoreDb = getFirestore();
   logger.info('Firebase Firestore initialized successfully');
 } catch (error) {
-  console.error('Error initializing Firebase Firestore:', error);
+  logger.error('Error initializing Firebase Firestore:', error);
   firestoreDb = {
     collection: () => ({}),
     doc: () => ({}),
     // Minimal fallback implementation
-  };
+  } as unknown as Firestore;
 }
 
 // Initialize Storage
 try {
-  _storage = getStorage();
+  storageInstance = getStorage();
   logger.info('Firebase Storage initialized successfully');
 } catch (error) {
-  console.error('Error initializing Firebase Storage:', error);
-  _storage = {
+  logger.error('Error initializing Firebase Storage:', error);
+  storageInstance = {
     ref: () => ({}),
-  };
+  } as unknown as FirebaseStorage;
 }
 
 // Export initialized services
-export const firebaseApp = initializeApp(firebaseConfig);
+export const firebaseApp = firebaseAppInstance;
 export const db = firestoreDb;
-export const storage = _storage;
+export const storage = storageInstance;
 
 // Safety function to check if Firebase is properly initialized
 export const isFirebaseInitialized = () => {

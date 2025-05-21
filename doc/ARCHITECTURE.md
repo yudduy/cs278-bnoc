@@ -219,7 +219,7 @@ The app uses a single camera capture system with `expo-camera`, managed through:
 - **Camera Component** - Provides the UI for camera preview and capture
 - **CameraPreview Component** - Allows users to review captured photos
 
-This simplifies the user experience while still supporting the core functionality of pairing selfies.
+This simplifies the user experience while still supporting the core functionality of pairing selfies. The previous dual-camera approach has been replaced with a more streamlined single-photo system that is easier to maintain and understand.
 
 ### 2. Optimized Image Handling
 
@@ -347,6 +347,18 @@ The app has undergone systematic code cleanup to reduce duplication and improve 
    - Updated all components to use direct imports from context providers
    - Standardized service method calls across components
 
+5. **Firebase Initialization Improvements**:
+   - Fixed double initialization issues in `src/config/firebaseInit.ts`
+   - Replaced console logging with proper logger usage
+   - Improved error handling with proper fallbacks
+   - Enhanced type safety throughout the Firebase configuration
+
+6. **Atomic Database Operations**:
+   - Improved like toggle functionality to use Firestore transactions
+   - Implemented atomic operations using `arrayUnion` and `arrayRemove`
+   - Prevented race conditions during concurrent updates
+   - Enhanced error handling for database operations
+
 ### 2. Component Refactoring
 
 Several components have been refactored to improve reusability and maintainability:
@@ -359,6 +371,11 @@ Several components have been refactored to improve reusability and maintainabili
 2. **CommentInput Improvement**:
    - Updated to use the correct parameters for the `addCommentToPairing` function
    - Fixed error handling with the new logger utility
+
+3. **completePairing Refactoring**:
+   - Updated the deprecated dual-camera function to use the new single-camera flow
+   - Provided backward compatibility by delegating to `updatePairingWithPhoto`
+   - Added appropriate warnings to guide developers toward the new implementation
 
 ### 3. Future Architecture Considerations
 
