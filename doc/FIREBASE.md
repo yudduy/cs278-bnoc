@@ -251,21 +251,22 @@ service cloud.firestore {
 
 ## Cloud Functions
 
-The app uses Firebase Cloud Functions for server-side operations:
+The app uses Firebase Cloud Functions for server-side operations. All functions have been optimized to return `void` or `Promise<void>` as required by Firebase Cloud Functions v2:
 
 ### Pairing Functions
 
 #### `pairUsers`
 Scheduled function that runs daily to create pairings between active users.
 
-- **Trigger**: Pub/Sub scheduler, daily at 5:00 AM PT
+- **Trigger**: Pub/Sub scheduler, daily at 5:00 AM PT (timezone: America/Los_Angeles)
 - **Logic**:
-  1. Get all active users not in the waitlist
+  1. Get all active users with low flake streak (< 5)
   2. Avoid pairing users who were recently paired or who blocked each other
-  3. Create optimal pairings based on user history
-  4. Create pairing documents in Firestore
-  5. Update each user's feed with the new pairing
+  3. Create optimal pairings based on 7-day pairing history
+  4. Create pairing documents in Firestore with virtual meeting links
+  5. Update user collections with pairing references
   6. Place unpaired users on the waitlist
+- **Improvements**: Enhanced error handling, removed return values, added comprehensive logging
 
 #### `markExpiredPairingsAsFlaked`
 Marks uncompleted pairings as flaked after the daily deadline.
@@ -275,7 +276,19 @@ Marks uncompleted pairings as flaked after the daily deadline.
   1. Find all pending pairings that have expired
   2. Update their status to 'flaked'
   3. Increment the flake streak for users
-  4. Update each user's pairing history
+  4. Update maxFlakeStreak if necessary
+- **Improvements**: Proper error type handling, logging improvements
+
+#### `checkFlakesDaily`
+Comprehensive flake checking function for detailed analysis.
+
+- **Trigger**: Pub/Sub scheduler, daily at 10:01 PM PT
+- **Location**: `functions/src/pairing/checkFlakes.ts`
+- **Logic**:
+  1. Query for all non-completed pairings from today
+  2. Determine which users flaked based on submission status
+  3. Update user flake counts and streaks using batch operations
+  4. Skip already flaked pairings to avoid double processing
 
 ### Notification Functions
 
@@ -284,19 +297,48 @@ Sends notifications about new daily pairings.
 
 - **Trigger**: Pub/Sub scheduler, daily at 7:00 AM PT
 - **Logic**:
-  1. Find all pairings created today
+  1. Find all pending pairings created today
   2. For each pairing, check if users have notifications enabled
   3. Check if current time is outside quiet hours
-  4. Send FCM notifications to eligible users
+  4. Send FCM notifications to eligible users with partner information
+- **Improvements**: Batch notification processing, proper error handling
 
 #### `sendReminderNotifications`
-Sends reminders for pending pairings.
+Sends afternoon reminders for pending pairings.
 
-- **Trigger**: Pub/Sub scheduler, daily at 3:00 PM PT and 7:00 PM PT
+- **Trigger**: Pub/Sub scheduler, daily at 3:00 PM PT
 - **Logic**:
   1. Find all pending pairings from today
-  2. For each pairing, check which users haven't submitted photos
-  3. Send FCM reminders to those users if they have reminders enabled
+  2. Check notification settings and quiet hours
+  3. Send FCM reminders to users who haven't completed their pairing
+
+#### `sendFinalReminderNotifications`
+Sends final reminders before deadline.
+
+- **Trigger**: Pub/Sub scheduler, daily at 7:00 PM PT
+- **Logic**:
+  1. Find all pending pairings from today
+  2. Send urgent final reminders with deadline information
+  3. Include special "urgent" flag in notification data
+
+#### `onPairingCompleted`
+Firestore trigger function for pairing completion events.
+
+- **Trigger**: Document update on `pairings/{pairingId}`
+- **Logic**:
+  1. Check if pairing status changed from 'pending' to 'completed'
+  2. Reset flake streak for both users to 0
+  3. Send completion notifications to both users
+  4. Include partner information in notifications
+
+### Technical Improvements Made
+
+1. **Return Type Compliance**: All functions now return `void` or `Promise<void>` as required by Firebase Functions v2
+2. **Error Handling**: Proper TypeScript error type checking with `error instanceof Error`
+3. **User Interface Enhancement**: Added `priorityNextPairing?: boolean` field to User interface
+4. **Logging Improvements**: Enhanced logging with detailed success/failure counts
+5. **Batch Operations**: Optimized database operations using Firestore batch writes
+6. **Type Safety**: Improved type definitions and error handling throughout
 
 ## Firebase Service Implementation
 

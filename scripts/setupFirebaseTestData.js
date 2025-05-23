@@ -4,13 +4,30 @@ const { v4: uuidv4 } = require('uuid'); // For generating pairing IDs
 // IMPORTANT: Replace with the actual path to your Firebase Admin SDK service account key
 // Ensure this file is NOT committed to your repository if it's public.
 // Download from Firebase Console: Project settings > Service accounts > Generate new private key
-const serviceAccount = require('../serviceAccountKey.json');
+let serviceAccount;
+try {
+  serviceAccount = require('../serviceAccountKey.json');
+  console.log('✅ Service account key loaded successfully');
+} catch (error) {
+  console.error('❌ Failed to load service account key:');
+  console.error('   Make sure serviceAccountKey.json exists in the project root');
+  console.error('   Download it from Firebase Console > Project settings > Service accounts');
+  process.exit(1);
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
 const db = admin.firestore();
+
+/**
+ * Improved Firebase Test Data Setup Script
+ * - Fixed array data types (proper arrays, not strings)
+ * - Keep passwords (maintain current auth system)  
+ * - Improved error handling and validation
+ * - Made reusable for future test data needs
+ */
 
 // Modified users array - now storing passwords directly in Firestore
 // and not using Firebase Auth at all

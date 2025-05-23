@@ -50,8 +50,8 @@ const FeedScreen: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Animation for feed appearance
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // FIXED: Removed conflicting fade animation that was causing bounce issues
+  // const fadeAnim = useRef(new Animated.Value(0)).current;
   const lastVisible = useRef<any>(null);
   const flatListRef = useRef<FlatList>(null);
   
@@ -171,14 +171,8 @@ const FeedScreen: React.FC = () => {
     }
   }, [user?.id]); // Dependency on user.id
 
-  // Load initial feed data
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+  // FIXED: Removed animation initialization that was causing conflicts
+  // Load initial feed data - animation removed to prevent bounce conflicts
   
   // Data loading and user authentication effect
   useEffect(() => {
@@ -227,20 +221,20 @@ const FeedScreen: React.FC = () => {
   /**
    * Pull-to-refresh handler
    */
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     if (!refreshing) {
       loadFeed(true);
     }
-  };
+  }, [refreshing, loadFeed]);
   
   /**
    * Load more data when reaching the end of the list
    */
-  const handleLoadMore = () => {
+  const handleLoadMore = useCallback(() => {
     if (!loadingMore && hasMore && !refreshing) {
       loadFeed(false);
     }
-  };
+  }, [loadingMore, hasMore, refreshing, loadFeed]);
   
   /**
    * Navigate to camera screen
@@ -342,33 +336,24 @@ const FeedScreen: React.FC = () => {
     // With the single camera flow, we'll use the user1_photoURL (if available) as the primary image
     const imageURL = item.user1_photoURL || item.user2_photoURL || defaultAvatar;
     
+    // FIXED: Removed Animated.View wrapper that was causing bounce conflicts
     return (
-      <Animated.View style={{
-        opacity: fadeAnim,
-        transform: [
-          { translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [50, 0]
-          })},
-        ],
-      }}>
-        <PostCard
-          id={item.id}
-          users={[user1, user2] as [User, User]}
-          imageURL={imageURL}
-          location={location}
-          timestamp={timestamp}
-          lateBy={0} // Calculate late time if needed
-          onLike={() => handleToggleLike(item.id)}
-          onReact={handleReaction}
-          onOptions={handleOptions}
-          likesCount={item.likesCount || 0}
-          commentsCount={item.commentsCount || 0}
-          currentUserLiked={currentUserLiked}
-        />
-      </Animated.View>
+      <PostCard
+        id={item.id}
+        users={[user1, user2] as [User, User]}
+        imageURL={imageURL}
+        location={location}
+        timestamp={timestamp}
+        lateBy={0} // Calculate late time if needed
+        onLike={() => handleToggleLike(item.id)}
+        onReact={handleReaction}
+        onOptions={handleOptions}
+        likesCount={item.likesCount || 0}
+        commentsCount={item.commentsCount || 0}
+        currentUserLiked={currentUserLiked}
+      />
     );
-  }, [users, fadeAnim, user?.id]);
+  }, [users, user?.id]); // FIXED: Removed fadeAnim dependency
   
   // Add function to toggle like using Firebase
   const handleToggleLike = async (pairingId: string) => {
@@ -402,7 +387,7 @@ const FeedScreen: React.FC = () => {
           friendCount={friendCount}
           minFriendsRequired={minFriendsRequired}
           onAddFriends={navigateToFriendsList}
-          onTakePhoto={navigateToCamera}
+          onTakePhoto={currentPairing ? navigateToCameraForPairing : navigateToCamera}
           hasEnoughFriends={true}
         />
       );
@@ -412,7 +397,7 @@ const FeedScreen: React.FC = () => {
           friendCount={friendCount}
           minFriendsRequired={minFriendsRequired}
           onAddFriends={navigateToFriendsList}
-          onTakePhoto={navigateToCamera}
+          onTakePhoto={currentPairing ? navigateToCameraForPairing : navigateToCamera}
           hasEnoughFriends={false}
         />
       );
@@ -462,7 +447,11 @@ const FeedScreen: React.FC = () => {
   // Determine if we should show the camera FAB
   const friendCount = user?.connections?.length || 0;
   const minFriendsRequired = 5;
-  const shouldShowCameraFab = friendCount >= minFriendsRequired && currentPairing != null && !hasUserSubmittedPhoto;
+  const shouldShowCameraFab =
+  friendCount >= minFriendsRequired &&
+  currentPairing != null &&
+  !hasUserSubmittedPhoto &&
+  !isPairingExpired;
   
   // Determine if we should show the retake photo FAB
   const shouldShowRetakeFab = currentPairing != null && hasUserSubmittedPhoto && !isPairingExpired;
@@ -502,6 +491,9 @@ const FeedScreen: React.FC = () => {
           }
           contentContainerStyle={pairings.length === 0 ? styles.emptyListContainer : styles.listContainer}
           showsVerticalScrollIndicator={false}
+          // FIXED: Disable bounces to prevent infinite bouncing conflicts
+          bounces={false}
+          alwaysBounceVertical={false}
         />
       )}
       

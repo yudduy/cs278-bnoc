@@ -86,75 +86,102 @@ const DailyPairingScreen: React.FC = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [loadCurrentPairing, partnerId]);
+  }, [loadCurrentPairing, partnerId, fetchPartnerDetails, selectRandomWelcomeMessage]);
 
-  useEffect(() => {
-    const loadScreenData = async () => {
-      setLocalLoading(true);
-      if (user && !currentPairing) { // Check if currentPairing is null
-        await loadCurrentPairing(); 
-        // After attempting to load, currentPairing might still be null if no pairing exists
-        // or it will be populated. The subsequent useEffect for partner details will handle its part.
-      }
-      // Select random welcome message
-      const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
-      setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
-      
-      // If there's no partnerId (derived from currentPairing), we might not need to wait for partner details.
-      if (!partnerId) {
-        setLocalLoading(false);
-      }
-      // If currentPairing is still null after load attempt, and no partnerId, stop loading.
-      // If currentPairing is populated, partnerId will be set, and the other useEffect will manage loading.
-    };
-    loadScreenData();
-  }, [user, currentPairing, loadCurrentPairing, partnerId]); // Added partnerId dependency
-
-  useEffect(() => {
-    const fetchPartnerDetails = async () => {
-      if (partnerId) {
-        setLocalLoading(true); // Ensure loading is true when fetching partner
-        try {
-          const partnerData = await firebaseService.getUserById(partnerId);
-          setPartner(partnerData || null);
-        } catch (error) {
-          console.error('Error fetching partner details:', error);
-          setPartner(null);
-        } finally {
-          setLocalLoading(false); // Stop loading once partner fetch is done or fails
-        }
-      } else {
-        setPartner(null); 
-        // If no partnerId, and currentPairing might be loaded (or not found), ensure loading stops.
-        if (currentPairing !== undefined) { // Check if currentPairing has been determined (even if null)
-            setLocalLoading(false);
-        }
-      }
-    };
-
-    // Only fetch if currentPairing is available (meaning partnerId would be derived)
-    // or if currentPairing is explicitly null (meaning no pairing, so stop loading)
-    if (currentPairing !== undefined) { 
-        fetchPartnerDetails();
+  // FIXED: Use useCallback to stabilize function references
+  const fetchPartnerDetails = useCallback(async (id: string) => {
+    try {
+      const partnerData = await firebaseService.getUserById(id);
+      setPartner(partnerData || null);
+    } catch (error) {
+      console.error('Error fetching partner details:', error);
+      setPartner(null);
     }
-  }, [partnerId, currentPairing]);
+  }, []);
 
-  const handleGoToChat = () => {
+  const selectRandomWelcomeMessage = useCallback(() => {
+    const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
+    setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
+  }, []);
+
+  // FIXED: Single consolidated useEffect to prevent loops
+  useEffect(() => {
+    let isMounted = true;
+
+    const initializeScreen = async () => {
+      if (!user) return;
+
+      setLocalLoading(true);
+
+      try {
+        // Load current pairing if not already loaded
+        if (currentPairing === undefined) {
+          await loadCurrentPairing();
+        }
+
+        // Set welcome message once
+        if (!welcomeMessage) {
+          selectRandomWelcomeMessage();
+        }
+
+        // Load partner details if we have a partnerId and haven't loaded partner yet
+        if (partnerId && !partner && isMounted) {
+          await fetchPartnerDetails(partnerId);
+        }
+
+      } catch (error) {
+        console.error('Error initializing screen:', error);
+      } finally {
+        if (isMounted) {
+          setLocalLoading(false);
+        }
+      }
+    };
+
+    initializeScreen();
+
+    // Cleanup function to prevent state updates on unmounted component
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    user?.id, 
+    currentPairing === undefined ? 'loading' : currentPairing?.id, // Only depend on pairing ID changes, not the full object
+    partnerId, 
+    !partner && partnerId ? 'need-partner' : 'have-partner', // Simplified partner loading state
+    !welcomeMessage ? 'need-message' : 'have-message' // Simplified message state
+  ]);
+
+  const handleGoToChat = useCallback(() => {
     if (!currentPairing || !partner) return;
     navigation.navigate('Chat', {
       pairingId: currentPairing.id,
       chatId: currentPairing.chatId,
     });
-  };
-    const handleGoHome = () => {
-    // Navigate to the Feed tab
-    navigation.navigate('TabNavigator', {
-      screen: 'Feed',
-      params: {}
-    });
-  };
+  }, [currentPairing?.id, currentPairing?.chatId, partner, navigation]);
+    const handleGoHome = useCallback(() => {
+    // FIXED: Use CommonActions.reset to prevent navigation loops
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'TabNavigator',
+            state: {
+              routes: [
+                { name: 'Feed' },
+                { name: 'Today' },
+                { name: 'Profile' },
+              ],
+              index: 0, // Navigate to Feed tab
+            },
+          },
+        ],
+      })
+    );
+  }, [navigation]);
 
-  const handleTakePhoto = () => {
+  const handleTakePhoto = useCallback(() => {
     if (currentPairing && user) {
       navigation.navigate('Camera', {
         pairingId: currentPairing.id,
@@ -164,7 +191,7 @@ const DailyPairingScreen: React.FC = () => {
     } else {
       console.warn("Cannot navigate to camera: missing currentPairing or user.");
     }
-  };
+  }, [currentPairing?.id, user?.id, navigation]);
   
   // isLoading is now primarily localLoading. 
   // It's true at the start, and during distinct loading phases (initial, partner fetch).
@@ -212,6 +239,9 @@ const DailyPairingScreen: React.FC = () => {
             tintColor={COLORS.primary}
           />
         }
+        // FIXED: Add bounces={false} to prevent scroll bounce conflicts
+        bounces={false}
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
           <Text style={styles.welcomeMessage}>{welcomeMessage}</Text>

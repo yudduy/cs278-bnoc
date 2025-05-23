@@ -71,8 +71,8 @@ export const storage = storageInstance;
 
 // Safety function to check if Firebase is properly initialized
 export const isFirebaseInitialized = () => {
-  return !!(firebaseApp && db && storage);
-};
+  return !!firebaseApp && !!db && !!storage && getApps().length > 0;
+ };
 
 // Export a singleton to ensure Firebase is only initialized once
 export default {

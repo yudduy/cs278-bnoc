@@ -242,11 +242,21 @@ This approach reduces query complexity and improves real-time performance.
 
 ### 4. Firebase Cloud Functions for Business Logic
 
-Complex business logic is implemented in Cloud Functions:
+Complex business logic is implemented in Cloud Functions with proper TypeScript compliance:
 
-- Pairing algorithm runs on a schedule
-- Notification dispatching
-- Feed updates
+- **Pairing algorithm** - Runs daily at 5:00 AM PT with sophisticated matching logic
+- **Notification dispatching** - Multiple scheduled functions for different notification types
+- **Flake checking** - Automated checking and user statistics updates
+- **Feed updates** - Real-time updates when pairings are completed
+- **Error handling** - Comprehensive error handling with proper TypeScript types
+- **Logging** - Detailed logging for debugging and monitoring
+
+**Recent Improvements:**
+- All functions now return `void` or `Promise<void>` as required by Firebase Functions v2
+- Enhanced error handling with proper type checking (`error instanceof Error`)
+- Improved logging with success/failure metrics
+- Batch operations for better performance and atomicity
+- Added `priorityNextPairing` field to User interface for better pairing logic
 
 This approach keeps the client lighter and ensures consistent business rule application.
 

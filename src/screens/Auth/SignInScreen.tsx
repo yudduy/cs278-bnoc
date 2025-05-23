@@ -1,10 +1,11 @@
 /**
  * SignInScreen
  * 
- * Screen for user sign in with Stanford email validation.
+ * Handles user authentication with Stanford email validation.
+ * Follows the black and white theme of the app.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,168 +13,188 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  StatusBar,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   ScrollView,
-  Alert
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../config/colors';
 import { useAuth } from '../../context/AuthContext';
+import { COLORS, FONTS, BORDER_RADIUS } from '../../config/theme';
 
 const SignInScreen: React.FC = () => {
+  const navigation = useNavigation<any>();
+  const { signIn, isLoading, error, clearError } = useAuth();
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const { signIn, error, isLoading, clearError } = useAuth();
-  const navigation = useNavigation();
+  const [localErrors, setLocalErrors] = useState<{email?: string; password?: string}>({});
 
-  // Clear auth context error when component unmounts
-  useEffect(() => {
-    return () => {
-      clearError();
-    };
-  }, [clearError]);
-
-  // Show auth context error if it exists
-  useEffect(() => {
-    if (error) {
-      setLocalError(error);
+  const validateForm = () => {
+    const errors: {email?: string; password?: string} = {};
+    
+    if (!email) {
+      errors.email = 'Email is required';
+    } else if (!email.toLowerCase().endsWith('@stanford.edu')) {
+      errors.email = 'Please use your Stanford email address';
     }
-  }, [error]);
+    
+    if (!password) {
+      errors.password = 'Password is required';
+    }
+    
+    setLocalErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSignIn = async () => {
-    // Clear previous errors
-    setLocalError(null);
+    if (!validateForm()) return;
+    
     clearError();
-    
-    if (!email || !password) {
-      setLocalError('Please enter both email and password');
-      return;
-    }
-    
-    // Validate Stanford email
-    if (!email.toLowerCase().endsWith('@stanford.edu')) {
-      setLocalError('Please use your Stanford email address (@stanford.edu)');
-      return;
-    }
-    
     try {
-      await signIn(email, password);
-    } catch (err: any) {
+      await signIn(email.toLowerCase().trim(), password);
+    } catch (err) {
       console.error('Sign in error:', err);
-      setLocalError(err.message || 'Sign in failed. Please check your credentials.');
     }
+  };
+
+  const navigateToSignUp = () => {
+    navigation.navigate('SignUp');
+  };
+
+  const navigateToForgotPassword = () => {
+    navigation.navigate('ForgotPassword');
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <KeyboardAvoidingView
+        style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoid}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+        >
           <View style={styles.content}>
-            {/* Logo */}
-            <View style={styles.logoContainer}>
-              <Text style={styles.appName}>BNOC</Text>
-              <Text style={styles.tagline}>Daily Meetup Selfie</Text>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.logo}>BNOC</Text>
+              <Text style={styles.subtitle}>Sign in to your account</Text>
             </View>
 
-            {/* Error message */}
-            {(localError || error) && (
+            {/* Error Message */}
+            {error && (
               <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{localError || error}</Text>
-                <TouchableOpacity 
-                  onPress={() => {
-                    setLocalError(null);
-                    clearError();
-                  }} 
-                  style={styles.errorCloseButton}
-                >
-                  <Ionicons name="close-circle" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
+                <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
-
-            {/* Sign in form */}
+            
+            {/* Form */}
             <View style={styles.form}>
-              {/* Email input */}
+              {/* Email Input */}
               <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={styles.inputLabel}>Stanford Email</Text>
                 <TextInput
-                  style={styles.input}
-                  placeholder="Stanford Email"
+                  style={[styles.input, localErrors.email && styles.inputError]}
+                  placeholder="your.name@stanford.edu"
                   placeholderTextColor={COLORS.textSecondary}
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (localErrors.email) {
+                      setLocalErrors(prev => ({ ...prev, email: undefined }));
+                    }
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
-                  value={email}
-                  onChangeText={setEmail}
+                  autoCorrect={false}
+                  editable={!isLoading}
                 />
+                {localErrors.email && (
+                  <Text style={styles.inputErrorText}>{localErrors.email}</Text>
+                )}
               </View>
 
-              {/* Password input */}
+              {/* Password Input */}
               <View style={styles.inputContainer}>
-                <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor={COLORS.textSecondary}
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                />
-                <TouchableOpacity
-                  style={styles.passwordToggle}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color={COLORS.textSecondary}
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.passwordInput, localErrors.password && styles.inputError]}
+                    placeholder="Enter your password"
+                    placeholderTextColor={COLORS.textSecondary}
+                    value={password}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (localErrors.password) {
+                        setLocalErrors(prev => ({ ...prev, password: undefined }));
+                      }
+                    }}
+                    secureTextEntry={!showPassword}
+                    editable={!isLoading}
                   />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off' : 'eye'}
+                      size={24}
+                      color={COLORS.textSecondary}
+                    />
+                  </TouchableOpacity>
+                </View>
+                {localErrors.password && (
+                  <Text style={styles.inputErrorText}>{localErrors.password}</Text>
+                )}
               </View>
 
-              {/* Forgot password */}
+              {/* Sign In Button */}
               <TouchableOpacity
-                style={styles.forgotPasswordButton}
-                onPress={() => navigation.navigate('ForgotPassword' as never)}
-              >
-                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-              </TouchableOpacity>
-
-              {/* Sign in button */}
-              <TouchableOpacity
-                style={[styles.signInButton, (!email || !password || isLoading) && styles.disabledButton]}
+                style={[styles.signInButton, isLoading && styles.disabledButton]}
                 onPress={handleSignIn}
-                disabled={!email || !password || isLoading}
+                disabled={isLoading}
               >
                 {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator size="small" color={COLORS.background} />
                 ) : (
                   <Text style={styles.signInButtonText}>Sign In</Text>
                 )}
               </TouchableOpacity>
 
-              {/* Sign up link */}
-              <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Don't have an account? </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('SignUp' as never)}>
-                  <Text style={styles.signUpLink}>Sign Up</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Forgot Password Link */}
+              <TouchableOpacity
+                style={styles.linkButton}
+                onPress={navigateToForgotPassword}
+                disabled={isLoading}
+              >
+                <Text style={styles.linkText}>Forgot your password?</Text>
+              </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Testing credentials */}
-          <View style={styles.testCredentialsContainer}>
-            <Text style={styles.testCredentialsTitle}>Test Credentials</Text>
-            <Text style={styles.testCredentials}>Email: duy@stanford.edu</Text>
-            <Text style={styles.testCredentials}>Password: password123</Text>
+            {/* Sign Up Link */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={navigateToSignUp} disabled={isLoading}>
+                <Text style={styles.footerLinkText}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Test Credentials for Development */}
+            {__DEV__ && (
+              <View style={styles.testCredentials}>
+                <Text style={styles.testTitle}>Test Credentials:</Text>
+                <Text style={styles.testText}>Email: test@stanford.edu</Text>
+                <Text style={styles.testText}>Password: test123</Text>
+              </View>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -186,129 +207,156 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  keyboardAvoid: {
+  keyboardView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
   },
   content: {
     flex: 1,
     padding: 24,
     justifyContent: 'center',
   },
-  logoContainer: {
+  header: {
     alignItems: 'center',
     marginBottom: 48,
-    marginTop: 40,
   },
-  appName: {
-    fontSize: 32,
-    fontFamily: 'ChivoBold',
-    color: COLORS.text,
+  logo: {
+    fontFamily: FONTS.bold,
+    fontSize: 48,
+    color: COLORS.primary,
+    letterSpacing: 2,
     marginBottom: 8,
   },
-  tagline: {
-    fontSize: 16,
-    fontFamily: 'ChivoLight',
+  subtitle: {
+    fontFamily: FONTS.regular,
+    fontSize: 18,
     color: COLORS.textSecondary,
-  },
-  form: {
-    width: '100%',
+    textAlign: 'center',
   },
   errorContainer: {
-    backgroundColor: COLORS.error,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#FFFFFF',
-    fontFamily: 'ChivoRegular',
-    flex: 1,
-  },
-  errorCloseButton: {
-    marginLeft: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-    height: 56,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    color: COLORS.text,
-    fontFamily: 'ChivoRegular',
-    height: '100%',
-  },
-  passwordToggle: {
-    padding: 8,
-  },
-  forgotPasswordButton: {
-    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: BORDER_RADIUS.md,
+    padding: 16,
     marginBottom: 24,
   },
-  forgotPasswordText: {
+  errorText: {
+    fontFamily: FONTS.regular,
+    fontSize: 14,
     color: COLORS.primary,
-    fontFamily: 'ChivoRegular',
+    textAlign: 'center',
+  },
+  form: {
+    marginBottom: 32,
+  },
+  inputContainer: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontFamily: FONTS.bold,
+    fontSize: 16,
+    color: COLORS.primary,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: COLORS.backgroundLight,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  inputError: {
+    borderColor: COLORS.primary,
+  },
+  inputErrorText: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    color: COLORS.primary,
+    marginTop: 4,
+  },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    backgroundColor: COLORS.backgroundLight,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingRight: 56,
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+    padding: 4,
   },
   signInButton: {
     backgroundColor: COLORS.primary,
-    height: 56,
-    borderRadius: 8,
-    justifyContent: 'center',
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 24,
+    marginTop: 16,
   },
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.7,
   },
   signInButtonText: {
-    color: COLORS.textOnPrimary,
-    fontSize: 16,
-    fontFamily: 'ChivoBold',
+    fontFamily: FONTS.bold,
+    fontSize: 18,
+    color: COLORS.background,
   },
-  signUpContainer: {
+  linkButton: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  linkText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+  },
+  footer: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  signUpText: {
+  footerText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
     color: COLORS.textSecondary,
-    fontFamily: 'ChivoRegular',
   },
-  signUpLink: {
+  footerLinkText: {
+    fontFamily: FONTS.bold,
+    fontSize: 16,
     color: COLORS.primary,
-    fontFamily: 'ChivoRegular',
-  },
-  testCredentialsContainer: {
-    padding: 16,
-    backgroundColor: COLORS.card,
-    marginHorizontal: 24,
-    marginBottom: 24,
-    marginTop: 32,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  testCredentialsTitle: {
-    fontFamily: 'ChivoBold',
-    color: COLORS.text,
-    marginBottom: 8,
   },
   testCredentials: {
-    fontFamily: 'ChivoRegular',
-    color: COLORS.textSecondary,
+    marginTop: 32,
+    padding: 16,
+    backgroundColor: COLORS.backgroundLight,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  testTitle: {
+    fontFamily: FONTS.bold,
     fontSize: 14,
+    color: COLORS.primary,
+    marginBottom: 8,
+  },
+  testText: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
   },
 });
 

@@ -22,10 +22,13 @@ This document outlines the current project directory structure of the Daily Meet
 │   └── STRUCTURE.md            # This document
 ├── firebase/                   # Firebase configuration
 ├── functions/                  # Firebase Cloud Functions
+│   ├── package.json            # Function dependencies and scripts
+│   ├── tsconfig.json           # TypeScript configuration for functions
 │   └── src/                    # Source code for Cloud Functions
-│       ├── index.ts            # Main Cloud Functions entry point
-│       ├── notifications/      # Notification handling functions
+│       ├── index.ts            # Main Cloud Functions entry point with pairing and notification functions
+│       ├── notifications/      # Notification handling functions (if present)
 │       └── pairing/            # Pairing algorithm functions
+│           └── checkFlakes.ts  # Daily flake checking function
 ├── src/                        # Application source code
 │   ├── components/             # Reusable UI components
 │   │   ├── buttons/            # Button components
@@ -165,9 +168,15 @@ This document outlines the current project directory structure of the Daily Meet
 
 ### Firebase Cloud Functions
 
-- **index.ts**: Main entry point for all Firebase Cloud Functions.
-- **pairing/*.ts**: Implements the daily pairing algorithm that matches users, avoiding recent repeats and respecting user preferences.
-- **notifications/*.ts**: Handles sending push notifications for new pairings, reminders, and social interactions.
+- **index.ts**: Main entry point for all Firebase Cloud Functions including:
+  - `pairUsers`: Daily pairing algorithm (5:00 AM PT)
+  - `markExpiredPairingsAsFlaked`: Marks expired pairings as flaked (10:05 PM PT)
+  - `sendPairingNotifications`: Sends new pairing notifications (7:00 AM PT)
+  - `sendReminderNotifications`: Sends reminder notifications (3:00 PM PT)
+  - `sendFinalReminderNotifications`: Sends final reminders (7:00 PM PT)
+  - `onPairingCompleted`: Handles pairing completion events
+- **pairing/checkFlakes.ts**: Daily function to check for flaked pairings and update user statistics (10:01 PM PT)
+- **notifications/*.ts**: Additional notification handling functions (if present)
 
 ### Core Services
 

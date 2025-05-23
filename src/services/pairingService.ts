@@ -451,17 +451,19 @@ export const toggleLikePairing = async (pairingId: string, userId: string): Prom
       
       if (isCurrentlyLiked) {
         // Remove like - use arrayRemove for atomic removal
+        const newCount = Math.max(0, (pairingData.likesCount || 0) - 1);
         transaction.update(pairingRef, {
           likedBy: arrayRemove(userId),
-          likesCount: increment(-1)
+          likesCount: newCount
         });
         logger.debug(`User ${userId} removed like from pairing ${pairingId}`);
         return false;
       } else {
         // Add like - use arrayUnion for atomic addition 
+        const newCount = Math.max(0, (pairingData.likesCount || 0) - 1);
         transaction.update(pairingRef, {
-          likedBy: arrayUnion(userId),
-          likesCount: increment(1)
+          likedBy: arrayRemove(userId),
+          likesCount: newCount
         });
         logger.debug(`User ${userId} liked pairing ${pairingId}`);
         return true;

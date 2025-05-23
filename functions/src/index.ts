@@ -5,7 +5,8 @@
  * and pairing expiration checks.
  */
 
-import * as functions from 'firebase-functions';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
 import { Timestamp } from 'firebase-admin/firestore';
 
@@ -28,6 +29,7 @@ interface User {
   maxFlakeStreak: number;
   blockedIds: string[];
   pushToken?: string;
+  priorityNextPairing?: boolean;
   notificationSettings: {
     pairingNotification: boolean;
     reminderNotification: boolean;
@@ -60,109 +62,99 @@ interface PairingHistory {
  * Daily pairing function that runs at 5:00 AM PT
  * Creates pairings for all active users
  */
-export const pairUsers = functions.pubsub
-  .schedule('0 5 * * *') // 5:00 AM PT daily
-  .timeZone('America/Los_Angeles')
-  .onRun(async (context) => {
-    const db = admin.firestore();
-    const batch = db.batch();
+export const pairUsers = onSchedule({
+  schedule: '0 5 * * *', // 5:00 AM PT daily
+  timeZone: 'America/Los_Angeles',
+}, async (event) => {
+  const db = admin.firestore();
+  const batch = db.batch();
+  
+  try {
+    console.log('Starting daily pairing algorithm...');
     
-    try {
-      console.log('Starting daily pairing algorithm...');
-      
-      // Get active users
-      const activeUsersSnapshot = await db.collection('users')
-        .where('isActive', '==', true)
-        .where('lastActive', '>', admin.firestore.Timestamp.fromDate(
-          new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-        ))
-        .where('flakeStreak', '<', 5) // Skip users with high flake streak
-        .get();
-      
-      const activeUsers = activeUsersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as User[];
-      
-      console.log(`Found ${activeUsers.length} active users to pair`);
-      
-      // Check if any users to pair
-      if (activeUsers.length < 2) {
-        console.log('Not enough active users to pair');
-        return { success: false, message: 'Not enough active users to pair' };
-      }
-      
-      // Shuffle users for random pairing
-      const shuffledUsers = shuffleArray(activeUsers);
-      
-      // Get pairing history to avoid recent repeats
-      const pairingHistoryData = await getPairingHistory(7); // Last 7 days
-      
-      // Pair users while avoiding recent repeats
-      const { pairings, waitlist } = createPairings(shuffledUsers, pairingHistoryData);
-      
-      console.log(`Created ${pairings.length} pairings with ${waitlist.length} users on waitlist`);
-      
-      // Calculate today's deadline (10:00 PM PT)
-      const today = new Date();
-      const expiresAt = new Date(today);
-      expiresAt.setHours(22, 0, 0, 0); // 10:00 PM
-      
-      // Create pairing documents
-      for (const pairing of pairings) {
-        const pairingRef = db.collection('pairings').doc();
-        
-        batch.set(pairingRef, {
-          id: pairingRef.id,
-          date: admin.firestore.Timestamp.now(),
-          expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
-          users: [pairing.user1.id, pairing.user2.id],
-          status: 'pending',
-          isPrivate: false,
-          likes: 0,
-          likedBy: [],
-          comments: [],
-          virtualMeetingLink: generateVirtualMeetingLink(pairingRef.id),
-        });
-        
-        // Also add to each user's pairings subcollection for faster queries
-        batch.set(
-          db.collection('users').doc(pairing.user1.id).collection('pairings').doc(pairingRef.id),
-          { pairingId: pairingRef.id, date: admin.firestore.Timestamp.now() }
-        );
-        batch.set(
-          db.collection('users').doc(pairing.user2.id).collection('pairings').doc(pairingRef.id),
-          { pairingId: pairingRef.id, date: admin.firestore.Timestamp.now() }
-        );
-      }
-      
-      // Handle waitlist users
-      for (const waitlistUser of waitlist) {
-        // Flag user as on waitlist today
-        batch.update(db.collection('users').doc(waitlistUser.id), {
-          waitlistedToday: true,
-          waitlistedAt: admin.firestore.Timestamp.now(),
-          priorityNextPairing: true, // Give priority for tomorrow
-        });
-      }
-      
-      // Commit all changes
-      await batch.commit();
-      
-      console.log('Successfully created pairings and updated waitlist');
-      
-      // Return success with statistics
-      return {
-        success: true,
-        totalUsers: activeUsers.length,
-        totalPairings: pairings.length,
-        waitlistCount: waitlist.length,
-      };
-    } catch (error) {
-      console.error('Error in pairUsers function:', error);
-      return { success: false, error: error.message };
+    // Get active users
+    const activeUsersSnapshot = await db.collection('users')
+      .where('isActive', '==', true)
+      .where('lastActive', '>', admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
+      ))
+      .where('flakeStreak', '<', 5) // Skip users with high flake streak
+      .get();
+    
+    const activeUsers = activeUsersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as User[];
+    
+    console.log(`Found ${activeUsers.length} active users to pair`);
+    
+    // Check if any users to pair
+    if (activeUsers.length < 2) {
+      console.log('Not enough active users to pair');
+      return;
     }
-  });
+    
+    // Shuffle users for random pairing
+    const shuffledUsers = shuffleArray(activeUsers);
+    
+    // Get pairing history to avoid recent repeats
+    const pairingHistoryData = await getPairingHistory(7); // Last 7 days
+    
+    // Pair users while avoiding recent repeats
+    const { pairings, waitlist } = createPairings(shuffledUsers, pairingHistoryData);
+    
+    console.log(`Created ${pairings.length} pairings with ${waitlist.length} users on waitlist`);
+    
+    // Calculate today's deadline (10:00 PM PT)
+    const today = new Date();
+    const expiresAt = new Date(today);
+    expiresAt.setHours(22, 0, 0, 0); // 10:00 PM
+    
+    // Create pairing documents
+    for (const pairing of pairings) {
+      const pairingRef = db.collection('pairings').doc();
+      
+      batch.set(pairingRef, {
+        id: pairingRef.id,
+        date: admin.firestore.Timestamp.now(),
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        users: [pairing.user1.id, pairing.user2.id],
+        status: 'pending',
+        isPrivate: false,
+        likes: 0,
+        likedBy: [],
+        comments: [],
+        virtualMeetingLink: generateVirtualMeetingLink(pairingRef.id),
+      });
+      
+      // Also add to each user's pairings subcollection for faster queries
+      batch.set(
+        db.collection('users').doc(pairing.user1.id).collection('pairings').doc(pairingRef.id),
+        { pairingId: pairingRef.id, date: admin.firestore.Timestamp.now() }
+      );
+      batch.set(
+        db.collection('users').doc(pairing.user2.id).collection('pairings').doc(pairingRef.id),
+        { pairingId: pairingRef.id, date: admin.firestore.Timestamp.now() }
+      );
+    }
+    
+    // Handle waitlist users
+    for (const waitlistUser of waitlist) {
+      // Flag user as on waitlist today
+      batch.update(db.collection('users').doc(waitlistUser.id), {
+        waitlistedToday: true,
+        waitlistedAt: admin.firestore.Timestamp.now(),
+      });
+    }
+    
+    // Commit all changes
+    await batch.commit();
+    
+    console.log(`Successfully created pairings. Stats: ${activeUsers.length} total users, ${pairings.length} pairings, ${waitlist.length} on waitlist`);
+  } catch (error) {
+    console.error('Error in pairUsers function:', error instanceof Error ? error.message : 'Unknown error');
+  }
+});
 
 // Export the checkFlakesDaily function
 export { checkFlakesDaily };
@@ -171,423 +163,387 @@ export { checkFlakesDaily };
  * Mark expired pairings as flaked at 10:05 PM PT
  * Increments flake streak for users who didn't complete their pairing
  */
-export const markExpiredPairingsAsFlaked = functions.pubsub
-  .schedule('5 22 * * *') // 10:05 PM PT daily
-  .timeZone('America/Los_Angeles')
-  .onRun(async (context) => {
-    const db = admin.firestore();
-    const batch = db.batch();
+export const markExpiredPairingsAsFlaked = onSchedule({
+  schedule: '5 22 * * *', // 10:05 PM PT daily
+  timeZone: 'America/Los_Angeles',
+}, async (event) => {
+  const db = admin.firestore();
+  const batch = db.batch();
+  
+  try {
+    console.log('Starting check for expired pairings...');
     
-    try {
-      console.log('Starting check for expired pairings...');
+    // Get today's date boundaries
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Get all pending pairings from today
+    const pendingPairingsSnapshot = await db.collection('pairings')
+      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('status', '==', 'pending')
+      .get();
       
-      // Get today's date boundaries
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    console.log(`Found ${pendingPairingsSnapshot.size} pending pairings to mark as flaked`);
+    
+    // Mark each pairing as flaked and increment flake streaks for both users
+    for (const pairingDoc of pendingPairingsSnapshot.docs) {
+      const pairingData = pairingDoc.data() as Pairing;
+      const pairingRef = pairingDoc.ref;
       
-      // Get all pending pairings from today
-      const pendingPairingsSnapshot = await db.collection('pairings')
-        .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
-        .where('status', '==', 'pending')
-        .get();
-        
-      console.log(`Found ${pendingPairingsSnapshot.size} pending pairings to mark as flaked`);
+      // Mark pairing as flaked
+      batch.update(pairingRef, {
+        status: 'flaked',
+        updatedAt: admin.firestore.Timestamp.now()
+      });
       
-      // Mark each pairing as flaked and increment flake streaks for both users
-      for (const pairingDoc of pendingPairingsSnapshot.docs) {
-        const pairingData = pairingDoc.data() as Pairing;
-        const pairingRef = pairingDoc.ref;
+      // Increment flake streak for each user
+      for (const userId of pairingData.users) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
         
-        // Mark pairing as flaked
-        batch.update(pairingRef, {
-          status: 'flaked',
-          updatedAt: admin.firestore.Timestamp.now()
-        });
-        
-        // Increment flake streak for each user
-        for (const userId of pairingData.users) {
-          const userRef = db.collection('users').doc(userId);
-          const userDoc = await userRef.get();
+        if (userDoc.exists) {
+          const userData = userDoc.data() as User;
+          const newFlakeStreak = (userData.flakeStreak || 0) + 1;
+          const maxFlakeStreak = Math.max(userData.maxFlakeStreak || 0, newFlakeStreak);
           
-          if (userDoc.exists) {
-            const userData = userDoc.data() as User;
-            const newFlakeStreak = (userData.flakeStreak || 0) + 1;
-            const maxFlakeStreak = Math.max(userData.maxFlakeStreak || 0, newFlakeStreak);
-            
-            batch.update(userRef, {
-              flakeStreak: newFlakeStreak,
-              maxFlakeStreak: maxFlakeStreak,
-              updatedAt: admin.firestore.Timestamp.now()
-            });
-          }
+          batch.update(userRef, {
+            flakeStreak: newFlakeStreak,
+            maxFlakeStreak: maxFlakeStreak,
+            updatedAt: admin.firestore.Timestamp.now()
+          });
         }
       }
-      
-      // Commit all the updates
-      await batch.commit();
-      
-      console.log(`Successfully marked ${pendingPairingsSnapshot.size} pairings as flaked`);
-      
-      return { 
-        success: true, 
-        flakedCount: pendingPairingsSnapshot.size 
-      };
-    } catch (error) {
-      console.error('Error marking expired pairings as flaked:', error);
-      return { 
-        success: false, 
-        error: error.message 
-      };
     }
-  });
+    
+    // Commit all the updates
+    await batch.commit();
+    
+    console.log(`Successfully marked ${pendingPairingsSnapshot.size} pairings as flaked`);
+  } catch (error) {
+    console.error('Error marking expired pairings as flaked:', error instanceof Error ? error.message : 'Unknown error');
+  }
+});
 
 /**
  * Send pairing notifications at 7:00 AM PT
  * Notifies users of their daily pairing
  */
-export const sendPairingNotifications = functions.pubsub
-  .schedule('0 7 * * *')
-  .timeZone('America/Los_Angeles')
-  .onRun(async (context) => {
-    const db = admin.firestore();
+export const sendPairingNotifications = onSchedule({
+  schedule: '0 7 * * *',
+  timeZone: 'America/Los_Angeles',
+}, async (event) => {
+  const db = admin.firestore();
+  
+  try {
+    console.log('Starting pairing notifications...');
     
-    try {
-      console.log('Starting pairing notifications...');
+    // Get today's pairings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const pairingsSnapshot = await db.collection('pairings')
+      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('status', '==', 'pending')
+      .get();
+    
+    console.log(`Found ${pairingsSnapshot.size} pairings to send notifications for`);
+    
+    // Process each pairing
+    const notifications = [];
+    
+    for (const pairingDoc of pairingsSnapshot.docs) {
+      const pairing = { id: pairingDoc.id, ...pairingDoc.data() } as Pairing;
       
-      // Get today's pairings
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Get user data for both users
+      const [user1Doc, user2Doc] = await Promise.all([
+        db.collection('users').doc(pairing.users[0]).get(),
+        db.collection('users').doc(pairing.users[1]).get(),
+      ]);
       
-      const pairingsSnapshot = await db.collection('pairings')
-        .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
-        .where('status', '==', 'pending')
-        .get();
+      const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
+      const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
       
-      console.log(`Found ${pairingsSnapshot.size} pairings to send notifications for`);
-      
-      // Process each pairing
-      const notifications = [];
-      
-      for (const pairingDoc of pairingsSnapshot.docs) {
-        const pairing = { id: pairingDoc.id, ...pairingDoc.data() } as Pairing;
-        
-        // Get user data for both users
-        const [user1Doc, user2Doc] = await Promise.all([
-          db.collection('users').doc(pairing.users[0]).get(),
-          db.collection('users').doc(pairing.users[1]).get(),
-        ]);
-        
-        const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
-        const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
-        
-        // Check notification settings and quiet hours
-        if (shouldSendNotification(user1) && user1.pushToken) {
-          notifications.push({
-            token: user1.pushToken,
-            notification: {
-              title: '📸 Today\'s Selfie Partner',
-              body: `You're paired with ${user2.displayName || user2.username} today! Take a selfie together before 10:00 PM PT.`,
-            },
-            data: { 
-              pairingId: pairing.id, 
-              type: 'pairing',
-              partnerName: user2.displayName || user2.username 
-            },
-          });
-        }
-        
-        if (shouldSendNotification(user2) && user2.pushToken) {
-          notifications.push({
-            token: user2.pushToken,
-            notification: {
-              title: '📸 Today\'s Selfie Partner',
-              body: `You're paired with ${user1.displayName || user1.username} today! Take a selfie together before 10:00 PM PT.`,
-            },
-            data: { 
-              pairingId: pairing.id, 
-              type: 'pairing',
-              partnerName: user1.displayName || user1.username 
-            },
-          });
-        }
+      // Check notification settings and quiet hours
+      if (shouldSendNotification(user1) && user1.pushToken) {
+        notifications.push({
+          token: user1.pushToken,
+          notification: {
+            title: '📸 Today\'s Selfie Partner',
+            body: `You're paired with ${user2.displayName || user2.username} today! Take a selfie together before 10:00 PM PT.`,
+          },
+          data: { 
+            pairingId: pairing.id, 
+            type: 'pairing',
+            partnerName: user2.displayName || user2.username 
+          },
+        });
       }
       
-      console.log(`Sending ${notifications.length} notifications`);
-      
-      // Send notifications in batches
-      const results = await sendNotificationsInBatches(notifications);
-      
-      return { 
-        success: true, 
-        sent: results.successCount,
-        failed: results.failureCount
-      };
-    } catch (error) {
-      console.error('Error sending pairing notifications:', error);
-      return { 
-        success: false, 
-        error: error.message 
-      };
+      if (shouldSendNotification(user2) && user2.pushToken) {
+        notifications.push({
+          token: user2.pushToken,
+          notification: {
+            title: '📸 Today\'s Selfie Partner',
+            body: `You're paired with ${user1.displayName || user1.username} today! Take a selfie together before 10:00 PM PT.`,
+          },
+          data: { 
+            pairingId: pairing.id, 
+            type: 'pairing',
+            partnerName: user1.displayName || user1.username 
+          },
+        });
+      }
     }
-  });
+    
+    console.log(`Sending ${notifications.length} notifications`);
+    
+    // Send notifications in batches
+    const results = await sendNotificationsInBatches(notifications);
+    
+    console.log(`Pairing notifications sent: ${results.successCount} successful, ${results.failureCount} failed`);
+  } catch (error) {
+    console.error('Error sending pairing notifications:', error instanceof Error ? error.message : 'Unknown error');
+  }
+});
 
 /**
  * Send reminder notifications at 3:00 PM PT for incomplete pairings
  */
-export const sendReminderNotifications = functions.pubsub
-  .schedule('0 15 * * *')
-  .timeZone('America/Los_Angeles')
-  .onRun(async (context) => {
-    const db = admin.firestore();
+export const sendReminderNotifications = onSchedule({
+  schedule: '0 15 * * *',
+  timeZone: 'America/Los_Angeles',
+}, async (event) => {
+  const db = admin.firestore();
+  
+  try {
+    console.log('Starting afternoon reminder notifications...');
     
-    try {
-      console.log('Starting afternoon reminder notifications...');
+    // Get today's pending pairings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const pendingPairingsSnapshot = await db.collection('pairings')
+      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('status', '==', 'pending')
+      .get();
+    
+    console.log(`Found ${pendingPairingsSnapshot.size} pending pairings to send reminders for`);
+    
+    // Process each pairing
+    const notifications = [];
+    
+    for (const pairingDoc of pendingPairingsSnapshot.docs) {
+      const pairing = { id: pairingDoc.id, ...pairingDoc.data() } as Pairing;
       
-      // Get today's pending pairings
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Get user data for both users
+      const [user1Doc, user2Doc] = await Promise.all([
+        db.collection('users').doc(pairing.users[0]).get(),
+        db.collection('users').doc(pairing.users[1]).get(),
+      ]);
       
-      const pendingPairingsSnapshot = await db.collection('pairings')
-        .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
-        .where('status', '==', 'pending')
-        .get();
+      const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
+      const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
       
-      console.log(`Found ${pendingPairingsSnapshot.size} pending pairings to send reminders for`);
-      
-      // Process each pairing
-      const notifications = [];
-      
-      for (const pairingDoc of pendingPairingsSnapshot.docs) {
-        const pairing = { id: pairingDoc.id, ...pairingDoc.data() } as Pairing;
-        
-        // Get user data for both users
-        const [user1Doc, user2Doc] = await Promise.all([
-          db.collection('users').doc(pairing.users[0]).get(),
-          db.collection('users').doc(pairing.users[1]).get(),
-        ]);
-        
-        const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
-        const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
-        
-        // Check notification settings and quiet hours
-        if (shouldSendNotification(user1, 'reminder') && user1.pushToken) {
-          notifications.push({
-            token: user1.pushToken,
-            notification: {
-              title: '⏰ Selfie Reminder',
-              body: `Don't forget to take a selfie with ${user2.displayName || user2.username} today! You have until 10:00 PM PT.`,
-            },
-            data: { 
-              pairingId: pairing.id, 
-              type: 'reminder',
-              partnerName: user2.displayName || user2.username 
-            },
-          });
-        }
-        
-        if (shouldSendNotification(user2, 'reminder') && user2.pushToken) {
-          notifications.push({
-            token: user2.pushToken,
-            notification: {
-              title: '⏰ Selfie Reminder',
-              body: `Don't forget to take a selfie with ${user1.displayName || user1.username} today! You have until 10:00 PM PT.`,
-            },
-            data: { 
-              pairingId: pairing.id, 
-              type: 'reminder',
-              partnerName: user1.displayName || user1.username 
-            },
-          });
-        }
+      // Check notification settings and quiet hours
+      if (shouldSendNotification(user1, 'reminder') && user1.pushToken) {
+        notifications.push({
+          token: user1.pushToken,
+          notification: {
+            title: '⏰ Selfie Reminder',
+            body: `Don't forget to take a selfie with ${user2.displayName || user2.username} today! You have until 10:00 PM PT.`,
+          },
+          data: { 
+            pairingId: pairing.id, 
+            type: 'reminder',
+            partnerName: user2.displayName || user2.username 
+          },
+        });
       }
       
-      console.log(`Sending ${notifications.length} reminder notifications`);
-      
-      // Send notifications in batches
-      const results = await sendNotificationsInBatches(notifications);
-      
-      return { 
-        success: true, 
-        sent: results.successCount,
-        failed: results.failureCount
-      };
-    } catch (error) {
-      console.error('Error sending reminder notifications:', error);
-      return { 
-        success: false, 
-        error: error.message 
-      };
+      if (shouldSendNotification(user2, 'reminder') && user2.pushToken) {
+        notifications.push({
+          token: user2.pushToken,
+          notification: {
+            title: '⏰ Selfie Reminder',
+            body: `Don't forget to take a selfie with ${user1.displayName || user1.username} today! You have until 10:00 PM PT.`,
+          },
+          data: { 
+            pairingId: pairing.id, 
+            type: 'reminder',
+            partnerName: user1.displayName || user1.username 
+          },
+        });
+      }
     }
-  });
+    
+    console.log(`Sending ${notifications.length} reminder notifications`);
+    
+    // Send notifications in batches
+    const results = await sendNotificationsInBatches(notifications);
+    
+    console.log(`Reminder notifications sent: ${results.successCount} successful, ${results.failureCount} failed`);
+  } catch (error) {
+    console.error('Error sending reminder notifications:', error instanceof Error ? error.message : 'Unknown error');
+  }
+});
 
 /**
  * Send final reminder notifications at 7:00 PM PT for incomplete pairings
  */
-export const sendFinalReminderNotifications = functions.pubsub
-  .schedule('0 19 * * *')
-  .timeZone('America/Los_Angeles')
-  .onRun(async (context) => {
-    const db = admin.firestore();
+export const sendFinalReminderNotifications = onSchedule({
+  schedule: '0 19 * * *',
+  timeZone: 'America/Los_Angeles',
+}, async (event) => {
+  const db = admin.firestore();
+  
+  try {
+    console.log('Starting final reminder notifications...');
     
-    try {
-      console.log('Starting final reminder notifications...');
+    // Get today's pending pairings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const pendingPairingsSnapshot = await db.collection('pairings')
+      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('status', '==', 'pending')
+      .get();
+    
+    console.log(`Found ${pendingPairingsSnapshot.size} pending pairings to send final reminders for`);
+    
+    // Process each pairing
+    const notifications = [];
+    
+    for (const pairingDoc of pendingPairingsSnapshot.docs) {
+      const pairing = { id: pairingDoc.id, ...pairingDoc.data() } as Pairing;
       
-      // Get today's pending pairings
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Get user data for both users
+      const [user1Doc, user2Doc] = await Promise.all([
+        db.collection('users').doc(pairing.users[0]).get(),
+        db.collection('users').doc(pairing.users[1]).get(),
+      ]);
       
-      const pendingPairingsSnapshot = await db.collection('pairings')
-        .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
-        .where('status', '==', 'pending')
-        .get();
+      const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
+      const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
       
-      console.log(`Found ${pendingPairingsSnapshot.size} pending pairings to send final reminders for`);
-      
-      // Process each pairing
-      const notifications = [];
-      
-      for (const pairingDoc of pendingPairingsSnapshot.docs) {
-        const pairing = { id: pairingDoc.id, ...pairingDoc.data() } as Pairing;
-        
-        // Get user data for both users
-        const [user1Doc, user2Doc] = await Promise.all([
-          db.collection('users').doc(pairing.users[0]).get(),
-          db.collection('users').doc(pairing.users[1]).get(),
-        ]);
-        
-        const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
-        const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
-        
-        // Check notification settings and quiet hours
-        if (shouldSendNotification(user1, 'reminder') && user1.pushToken) {
-          notifications.push({
-            token: user1.pushToken,
-            notification: {
-              title: '🚨 Final Reminder',
-              body: `Only 3 hours left to take a selfie with ${user2.displayName || user2.username} today!`,
-            },
-            data: { 
-              pairingId: pairing.id, 
-              type: 'final_reminder',
-              partnerName: user2.displayName || user2.username,
-              urgent: 'true'
-            },
-          });
-        }
-        
-        if (shouldSendNotification(user2, 'reminder') && user2.pushToken) {
-          notifications.push({
-            token: user2.pushToken,
-            notification: {
-              title: '🚨 Final Reminder',
-              body: `Only 3 hours left to take a selfie with ${user1.displayName || user1.username} today!`,
-            },
-            data: { 
-              pairingId: pairing.id, 
-              type: 'final_reminder',
-              partnerName: user1.displayName || user1.username,
-              urgent: 'true'
-            },
-          });
-        }
+      // Check notification settings and quiet hours
+      if (shouldSendNotification(user1, 'reminder') && user1.pushToken) {
+        notifications.push({
+          token: user1.pushToken,
+          notification: {
+            title: '🚨 Final Reminder',
+            body: `Only 3 hours left to take a selfie with ${user2.displayName || user2.username} today!`,
+          },
+          data: { 
+            pairingId: pairing.id, 
+            type: 'final_reminder',
+            partnerName: user2.displayName || user2.username,
+            urgent: 'true'
+          },
+        });
       }
       
-      console.log(`Sending ${notifications.length} final reminder notifications`);
-      
-      // Send notifications in batches
-      const results = await sendNotificationsInBatches(notifications);
-      
-      return { 
-        success: true, 
-        sent: results.successCount,
-        failed: results.failureCount
-      };
-    } catch (error) {
-      console.error('Error sending final reminder notifications:', error);
-      return { 
-        success: false, 
-        error: error.message 
-      };
+      if (shouldSendNotification(user2, 'reminder') && user2.pushToken) {
+        notifications.push({
+          token: user2.pushToken,
+          notification: {
+            title: '🚨 Final Reminder',
+            body: `Only 3 hours left to take a selfie with ${user1.displayName || user1.username} today!`,
+          },
+          data: { 
+            pairingId: pairing.id, 
+            type: 'final_reminder',
+            partnerName: user1.displayName || user1.username,
+            urgent: 'true'
+          },
+        });
+      }
     }
-  });
+    
+    console.log(`Sending ${notifications.length} final reminder notifications`);
+    
+    // Send notifications in batches
+    const results = await sendNotificationsInBatches(notifications);
+    
+    console.log(`Final reminder notifications sent: ${results.successCount} successful, ${results.failureCount} failed`);
+  } catch (error) {
+    console.error('Error sending final reminder notifications:', error instanceof Error ? error.message : 'Unknown error');
+  }
+});
 
 /**
  * Send notification when a pairing is completed
  */
-export const onPairingCompleted = functions.firestore
-  .document('pairings/{pairingId}')
-  .onUpdate(async (change, context) => {
-    const db = admin.firestore();
+export const onPairingCompleted = onDocumentUpdated('pairings/{pairingId}', async (event) => {
+  const db = admin.firestore();
+  
+  try {
+    const before = event.data?.before.data() as Pairing;
+    const after = event.data?.after.data() as Pairing;
     
-    try {
-      const before = change.before.data() as Pairing;
-      const after = change.after.data() as Pairing;
+    // Check if status changed from pending to completed
+    if (before.status === 'pending' && after.status === 'completed') {
+      console.log(`Pairing ${event.params?.pairingId} completed, sending notifications`);
       
-      // Check if status changed from pending to completed
-      if (before.status === 'pending' && after.status === 'completed') {
-        console.log(`Pairing ${change.after.id} completed, sending notifications`);
-        
-        // Get user data for both users
-        const [user1Doc, user2Doc] = await Promise.all([
-          db.collection('users').doc(after.users[0]).get(),
-          db.collection('users').doc(after.users[1]).get(),
-        ]);
-        
-        const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
-        const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
-        
-        // Reset flake streak for both users
-        await Promise.all([
-          db.collection('users').doc(user1.id).update({ flakeStreak: 0 }),
-          db.collection('users').doc(user2.id).update({ flakeStreak: 0 }),
-        ]);
-        
-        // Prepare notifications
-        const notifications = [];
-        
-        // Send notifications to both users (if they have tokens)
-        if (shouldSendNotification(user1, 'completion') && user1.pushToken) {
-          notifications.push({
-            token: user1.pushToken,
-            notification: {
-              title: '✅ Selfie Completed',
-              body: `Your selfie with ${user2.displayName || user2.username} has been posted!`,
-            },
-            data: { 
-              pairingId: change.after.id, 
-              type: 'completion'
-            },
-          });
-        }
-        
-        if (shouldSendNotification(user2, 'completion') && user2.pushToken) {
-          notifications.push({
-            token: user2.pushToken,
-            notification: {
-              title: '✅ Selfie Completed',
-              body: `Your selfie with ${user1.displayName || user1.username} has been posted!`,
-            },
-            data: { 
-              pairingId: change.after.id, 
-              type: 'completion'
-            },
-          });
-        }
-        
-        // Send notifications
-        if (notifications.length > 0) {
-          await sendNotificationsInBatches(notifications);
-        }
-        
-        return { success: true };
+      // Get user data for both users
+      const [user1Doc, user2Doc] = await Promise.all([
+        db.collection('users').doc(after.users[0]).get(),
+        db.collection('users').doc(after.users[1]).get(),
+      ]);
+      
+      const user1 = { id: user1Doc.id, ...user1Doc.data() } as User;
+      const user2 = { id: user2Doc.id, ...user2Doc.data() } as User;
+      
+      // Reset flake streak for both users
+      await Promise.all([
+        db.collection('users').doc(user1.id).update({ flakeStreak: 0 }),
+        db.collection('users').doc(user2.id).update({ flakeStreak: 0 }),
+      ]);
+      
+      // Prepare notifications
+      const notifications = [];
+      
+      // Send notifications to both users (if they have tokens)
+      if (shouldSendNotification(user1, 'completion') && user1.pushToken) {
+        notifications.push({
+          token: user1.pushToken,
+          notification: {
+            title: '✅ Selfie Completed',
+            body: `Your selfie with ${user2.displayName || user2.username} has been posted!`,
+          },
+          data: { 
+            pairingId: event.params?.pairingId, 
+            type: 'completion'
+          },
+        });
       }
       
-      return null;
-    } catch (error) {
-      console.error('Error in onPairingCompleted function:', error);
-      return { success: false, error: error.message };
+      if (shouldSendNotification(user2, 'completion') && user2.pushToken) {
+        notifications.push({
+          token: user2.pushToken,
+          notification: {
+            title: '✅ Selfie Completed',
+            body: `Your selfie with ${user1.displayName || user1.username} has been posted!`,
+          },
+          data: { 
+            pairingId: event.params?.pairingId, 
+            type: 'completion'
+          },
+        });
+      }
+      
+      // Send notifications
+      if (notifications.length > 0) {
+        await sendNotificationsInBatches(notifications);
+      }
+      
+      console.log(`Completion notifications sent for pairing ${event.params?.pairingId}`);
+    } else {
+      console.log(`Pairing ${event.params?.pairingId} status change does not require notification`);
     }
-  });
+  } catch (error) {
+    console.error('Error in onPairingCompleted function:', error instanceof Error ? error.message : 'Unknown error');
+  }
+});
 
 // Helper functions
 

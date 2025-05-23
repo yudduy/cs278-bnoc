@@ -1,0 +1,10 @@
+node_modules/
+lib/
+*.log
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+firebase-debug.log
+firebase-debug.*.log
