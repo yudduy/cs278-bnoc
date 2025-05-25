@@ -5,7 +5,7 @@
  * Displays both users' profile pictures and provides options to go to chat or return home.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import {
   StatusBar,
   ActivityIndicator,
   ScrollView,
-  RefreshControl
+  RefreshControl,
+  Animated
 } from 'react-native';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,20 +30,24 @@ import { DAILY_PAIRING_MESSAGES } from '../../config/constants';
 import firebaseService from '../../services/firebase';
 import { User } from '../../types';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { MainStackParamList } from '../../types/navigation';
+import { MainStackParamList, PairingStackParamList } from '../../types/navigation';
+import logger from '../../utils/logger';
 
-// Type for navigation props
-type DailyPairingScreenNavigationProp = StackNavigationProp<MainStackParamList, 'Pairing'>;
+// Type for navigation props - use PairingStackParamList since we're navigating within the stack
+type DailyPairingScreenNavigationProp = StackNavigationProp<PairingStackParamList, 'DailyPairing'>;
 
 const DailyPairingScreen: React.FC = () => {
   const navigation = useNavigation<DailyPairingScreenNavigationProp>();
-  const { currentPairing, loadCurrentPairing } = usePairing();
+  const { currentPairing, loadCurrentPairing, markPairingIntroAsSeen } = usePairing();
   const { user } = useAuth();
   
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [partner, setPartner] = useState<User | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Animation for Let's Go button
+  const buttonScale = useRef(new Animated.Value(1)).current;
 
   // Determine if the current user is user1 in the pairing
   const isUser1 = useMemo(() => currentPairing?.user1_id === user?.id, [currentPairing, user]);
@@ -65,6 +70,22 @@ const DailyPairingScreen: React.FC = () => {
     return isUser1 ? currentPairing.user2_id : currentPairing.user1_id;
   }, [currentPairing, user, isUser1]);
 
+  // FIXED: Use useCallback to stabilize function references
+  const fetchPartnerDetails = useCallback(async (id: string) => {
+    try {
+      const partnerData = await firebaseService.getUserById(id);
+      setPartner(partnerData || null);
+    } catch (error) {
+      logger.error('Error fetching partner details', error);
+      setPartner(null);
+    }
+  }, []);
+
+  const selectRandomWelcomeMessage = useCallback(() => {
+    const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
+    setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
+  }, []);
+
   // Handle pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -79,30 +100,13 @@ const DailyPairingScreen: React.FC = () => {
       }
       
       // Select new random welcome message
-      const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
-      setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
+      selectRandomWelcomeMessage();
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      logger.error('Error refreshing data', error);
     } finally {
       setRefreshing(false);
     }
   }, [loadCurrentPairing, partnerId, fetchPartnerDetails, selectRandomWelcomeMessage]);
-
-  // FIXED: Use useCallback to stabilize function references
-  const fetchPartnerDetails = useCallback(async (id: string) => {
-    try {
-      const partnerData = await firebaseService.getUserById(id);
-      setPartner(partnerData || null);
-    } catch (error) {
-      console.error('Error fetching partner details:', error);
-      setPartner(null);
-    }
-  }, []);
-
-  const selectRandomWelcomeMessage = useCallback(() => {
-    const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
-    setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
-  }, []);
 
   // FIXED: Single consolidated useEffect to prevent loops
   useEffect(() => {
@@ -130,7 +134,7 @@ const DailyPairingScreen: React.FC = () => {
         }
 
       } catch (error) {
-        console.error('Error initializing screen:', error);
+        logger.error('Error initializing screen', error);
       } finally {
         if (isMounted) {
           setLocalLoading(false);
@@ -154,7 +158,8 @@ const DailyPairingScreen: React.FC = () => {
 
   const handleGoToChat = useCallback(() => {
     if (!currentPairing || !partner) return;
-    navigation.navigate('Chat', {
+    // Chat is in the MainStack, so navigate up from PairingStack
+    (navigation as any).navigate('Chat', {
       pairingId: currentPairing.id,
       chatId: currentPairing.chatId,
     });
@@ -183,15 +188,36 @@ const DailyPairingScreen: React.FC = () => {
 
   const handleTakePhoto = useCallback(() => {
     if (currentPairing && user) {
-      navigation.navigate('Camera', {
+      // Camera is in the MainStack, so navigate up from PairingStack
+      (navigation as any).navigate('Camera', {
         pairingId: currentPairing.id,
         userId: user.id,
         submissionType: 'pairing',
       });
     } else {
-      console.warn("Cannot navigate to camera: missing currentPairing or user.");
+      logger.warn("Cannot navigate to camera: missing currentPairing or user.");
     }
   }, [currentPairing?.id, user?.id, navigation]);
+  
+  const handleLetsGo = useCallback(() => {
+    // Add button press animation
+    Animated.sequence([
+      Animated.timing(buttonScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    
+    // Mark the intro as seen and navigate to the status screen
+    markPairingIntroAsSeen();
+    navigation.navigate('CurrentPairing');
+  }, [markPairingIntroAsSeen, navigation, buttonScale]);
   
   // isLoading is now primarily localLoading. 
   // It's true at the start, and during distinct loading phases (initial, partner fetch).
@@ -244,88 +270,69 @@ const DailyPairingScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
-          <Text style={styles.welcomeMessage}>{welcomeMessage}</Text>
+          {/* Header */}
+          <Text style={styles.matchTitle}>Today's Match:</Text>
           
-          {!currentUserPairingPhotoURL ? (
-            <View style={styles.takePhotoContainer}>
-              <Ionicons name="camera-reverse-outline" size={60} color={COLORS.primary} style={{marginBottom: 20}} />
-              <Text style={styles.promptText}>It's time for your daily pairing photo!</Text>
-              <PrimaryButton
-                text="Take Pairing Photo"
-                onPress={handleTakePhoto}
-                icon="camera-outline"
-                style={styles.actionButton}
-              />
-              <View style={{ marginTop: 16 }}>
-                <SecondaryButton
-                  text="Maybe Later (Home)"
-                  onPress={handleGoHome}
-                />
+          {/* Vertical Stacked Portraits */}
+          <View style={styles.stackedPortraitsContainer}>
+            {/* Current User Portrait */}
+            <View style={styles.portraitWrapper}>
+              <Text style={styles.portraitLabel}>You</Text>
+              <View style={styles.circularPortraitContainer}>
+                {user?.photoURL ? (
+                  <Image 
+                    source={{ uri: user.photoURL }}
+                    style={styles.circularPortrait}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.circularPortrait, styles.placeholderPortrait]}>
+                    <Ionicons name="person-outline" size={32} color={COLORS.primary} />
+                  </View>
+                )}
               </View>
             </View>
-          ) : (
-            <>
-              <View style={styles.feedStyleProfilesContainer}>
-                {/* Partner Profile - Displayed at the top */}
-                <View style={styles.feedStyleProfileWrapper}>
-                  <Text style={styles.feedStyleUsername}>{partner?.displayName || 'Your Partner'}</Text>
-                  <View style={styles.feedStyleProfileImageContainer}>
-                    {partnerPairingPhotoURL ? (
-                      <Image 
-                        source={{ uri: partnerPairingPhotoURL }}
-                        style={styles.feedStyleProfileImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[styles.feedStyleProfileImage, styles.photoMissingPlaceholder]}>
-                        <Text style={styles.photoMissingText}>
-                          {partner ? `${partner.displayName || 'Partner'} hasn't submitted yet.` : "Waiting for partner..."}
-                        </Text>
-                      </View>
-                    )}
+            
+            {/* Partner Portrait */}
+            <View style={styles.portraitWrapper}>
+              <Text style={styles.portraitLabel}>{partner?.displayName || 'Partner'}</Text>
+              <View style={styles.circularPortraitContainer}>
+                {partner?.photoURL ? (
+                  <Image 
+                    source={{ uri: partner.photoURL }}
+                    style={styles.circularPortrait}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.circularPortrait, styles.placeholderPortrait]}>
+                    <Ionicons name="person-outline" size={32} color={COLORS.primary} />
                   </View>
-                </View>
-                
-                {/* Your Profile - Displayed below partner */}
-                <View style={styles.feedStyleProfileWrapper}>
-                  <Text style={styles.feedStyleUsername}>You</Text>
-                  <View style={styles.feedStyleProfileImageContainer}>
-                    {currentUserPairingPhotoURL ? (
-                      <Image 
-                        source={{ uri: currentUserPairingPhotoURL }}
-                        style={styles.feedStyleProfileImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[styles.feedStyleProfileImage, styles.photoMissingPlaceholder]}>
-                        <Text style={styles.photoMissingText}>Your photo</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
+                )}
               </View>
-              
-              <View style={styles.buttonsContainer}>
-                <PrimaryButton
-                  text="Go To Chat"
-                  onPress={handleGoToChat}
-                  icon="chatbubble-outline"
-                  disabled={!partner} // Disable chat if partner details not loaded
-                />
-                <View style={styles.buttonSpacer} />
-                <SecondaryButton
-                  text={currentUserPairingPhotoURL ? "Retake Pairing Photo" : "Take Pairing Photo"}
-                  onPress={handleTakePhoto}
-                  icon="camera-outline"
-                />
-                <View style={styles.buttonSpacer} />
-                <SecondaryButton
-                  text="Back Home"
-                  onPress={handleGoHome}
-                />
-              </View>
-            </>
-          )}
+            </View>
+          </View>
+          
+          {/* Description Text */}
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.descriptionText}>
+              {partner?.displayName || 'Your partner'} and you have been matched for today's BNOC selfie! 
+              Ready to capture your moment together?
+            </Text>
+          </View>
+          
+          {/* Let's Go Button */}
+          <Animated.View 
+            style={[
+              styles.buttonContainer,
+              { transform: [{ scale: buttonScale }] }
+            ]}
+          >
+            <PrimaryButton
+              text="Let's go"
+              onPress={handleLetsGo}
+              style={styles.letsGoButton}
+            />
+          </Animated.View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -342,9 +349,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: '100%',
   },
   loadingContainer: {
     flex: 1,
@@ -492,11 +501,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  placeholderText: {
-    fontFamily: FONTS.bold,
-    fontSize: 48,
-    color: COLORS.primary,
-  },
+
   photoMissingPlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -515,6 +520,69 @@ const styles = StyleSheet.create({
   },
   buttonSpacer: {
     height: 16,
+  },
+  matchTitle: {
+    fontFamily: FONTS.bold,
+    fontSize: 24,
+    color: COLORS.primary,
+    marginBottom: 32,
+    textAlign: 'center',
+  },
+  stackedPortraitsContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  portraitWrapper: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  portraitLabel: {
+    fontFamily: FONTS.medium,
+    fontSize: 16,
+    color: COLORS.primary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  circularPortraitContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    overflow: 'hidden',
+    backgroundColor: COLORS.backgroundDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  circularPortrait: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderPortrait: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundLight,
+  },
+  descriptionContainer: {
+    marginBottom: 32,
+    paddingHorizontal: 16,
+  },
+  descriptionText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.text,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  buttonContainer: {
+    width: '100%',
+    maxWidth: 280,
+    alignItems: 'center',
+  },
+  letsGoButton: {
+    width: '100%',
+    paddingVertical: 16,
   },
 });
 

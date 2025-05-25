@@ -113,3 +113,8 @@ export type OnboardingStackParamList = {
   ProfileSetup: undefined;
   Completion: undefined;
 };
+
+export type PairingStackParamList = {
+  CurrentPairing: undefined;
+  DailyPairing: undefined;
+};

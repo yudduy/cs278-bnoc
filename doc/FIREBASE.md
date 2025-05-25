@@ -11,6 +11,81 @@ The app uses the following Firebase services:
 - **Storage**: Image storage for user photos
 - **Cloud Functions**: Server-side logic for pairing and notifications
 
+## Firebase v11 + Expo SDK 53 Compatibility
+
+The application has been successfully configured to work with Firebase v11 and Expo SDK 53, resolving critical compatibility issues:
+
+### **Metro Configuration Solution**
+
+The primary compatibility issue ("Component auth has not been registered yet") was resolved with a Metro configuration fix:
+
+```javascript
+// metro.config.js
+const { getDefaultConfig } = require('@expo/metro-config');
+
+const config = getDefaultConfig(__dirname);
+
+// Fix for Firebase v11 compatibility with Expo SDK 53
+config.resolver.unstable_enablePackageExports = false;
+
+module.exports = config;
+```
+
+This configuration disables package exports resolution, which prevents Firebase v11's package.json exports from causing module resolution conflicts in Expo's Metro bundler.
+
+### **Package Version Compatibility**
+
+The following package versions have been verified to work together:
+
+```json
+{
+  "dependencies": {
+    "expo": "~53.0.0",
+    "firebase": "^11.8.1",
+    "react": "19.0.0",
+    "react-native": "0.76.5",
+    "@react-native-async-storage/async-storage": "2.1.2"
+  },
+  "overrides": {
+    "react": "19.0.0"
+  }
+}
+```
+
+### **Simplified Firebase Authentication**
+
+The authentication initialization has been simplified to work reliably with Expo SDK 53:
+
+```typescript
+// src/config/firebaseInit.ts
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
+
+// Initialize Firebase (simplified approach)
+let app: FirebaseApp;
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
+} else {
+  app = getApp();
+}
+
+// Export services using standard getAuth() - persistence is automatic
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+```
+
+### **Production Deployment Considerations**
+
+For production deployment with Firebase v11 and Expo SDK 53:
+
+1. **Metro Cache**: Always clear Metro cache when switching between development and production builds
+2. **Environment Variables**: Ensure Firebase configuration is properly set for production environment
+3. **Package Overrides**: The React version override in package.json is necessary for compatibility
+4. **Build Optimization**: Expo builds work correctly with the Metro configuration fix
+
 ## Firebase Integration Architecture
 
 The app follows a structured approach to Firebase integration:

@@ -8,6 +8,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Alert } from 'react-native';
+import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, Unsubscribe } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import firebaseService from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { Pairing, User } from '../types';
@@ -67,12 +69,95 @@ export const FeedProvider: React.FC<FeedProviderProps> = ({
     hasMore: true,
   });
   
+  // Real-time listener cleanup
+  const [feedListener, setFeedListener] = useState<Unsubscribe | null>(null);
+  
   // Load initial feed data
   useEffect(() => {
     if (user?.id) {
       loadFeed(true);
+      setupFeedListener();
+    } else {
+      // Clean up listener if user logs out
+      if (feedListener) {
+        feedListener();
+        setFeedListener(null);
+      }
     }
+    
+    // Cleanup listener on unmount
+    return () => {
+      if (feedListener) {
+        feedListener();
+        setFeedListener(null);
+      }
+    };
   }, [user?.id]);
+  
+  /**
+   * Set up real-time listener for completed pairings
+   */
+  const setupFeedListener = () => {
+    if (!user?.id) return;
+    
+    // Clean up existing listener
+    if (feedListener) {
+      feedListener();
+    }
+    
+    // Listen for completed pairings that include the current user
+    const feedQuery = query(
+      collection(db, 'pairings'),
+      where('status', '==', 'completed'),
+      where('users', 'array-contains', user.id),
+      orderBy('completedAt', 'desc'),
+      limit(20)
+    );
+    
+    const unsubscribe = onSnapshot(feedQuery, async (snapshot) => {
+      try {
+        const completedPairings: Pairing[] = [];
+        
+        snapshot.forEach((doc) => {
+          const pairingData = { id: doc.id, ...doc.data() } as Pairing;
+          completedPairings.push(pairingData);
+        });
+        
+        // Update pairings state with real-time data
+        setPairings(completedPairings);
+        
+        // Fetch user data for any new pairings
+        const newUsers: Record<string, User> = { ...users };
+        const userIds = new Set<string>();
+        completedPairings.forEach(pairing => {
+          pairing.users.forEach(userId => userIds.add(userId));
+        });
+        
+        const usersToFetch = Array.from(userIds).filter(id => !newUsers[id]);
+        if (usersToFetch.length > 0) {
+          await Promise.all(
+            usersToFetch.map(async (userId) => {
+              try {
+                const userData = await firebaseService.getUserById(userId);
+                if (userData) {
+                  newUsers[userId] = userData;
+                }
+              } catch (error) {
+                console.error(`Error fetching user ${userId}:`, error);
+              }
+            })
+          );
+          setUsers(newUsers);
+        }
+      } catch (error) {
+        console.error('Error processing feed updates:', error);
+      }
+    }, (error) => {
+      console.error('Error listening to feed updates:', error);
+    });
+    
+    setFeedListener(unsubscribe);
+  };
   
   /**
    * Load feed data

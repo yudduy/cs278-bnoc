@@ -7,6 +7,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Alert } from 'react-native';
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import firebaseService from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { Pairing, SubmitPhotoParams, Comment } from '../types';
@@ -20,6 +22,9 @@ interface PairingContextType {
   waitingForUser: string | null; // ID of the user we're waiting for
   partnerUsername: string | null; // Username of the partner
   
+  // Introduction tracking
+  hasSeenTodaysPairingIntro: boolean;
+  
   // History
   pairingHistory: Pairing[];
   historyLoading: boolean;
@@ -31,7 +36,18 @@ interface PairingContextType {
   toggleLikePairing: (pairingId: string) => Promise<void>;
   addCommentToPairing: (pairingId: string, commentText: string) => Promise<void>;
   sendReminder: (pairingId: string, partnerId: string) => Promise<void>;
+  markPairingIntroAsSeen: () => void;
   clearPairingError: () => void;
+  
+  // Planner mode functions
+  setPhotoMode: (mode: 'individual' | 'together') => Promise<void>;
+  getPhotoModeStatus: () => {
+    hasChoice: boolean;
+    mode: 'individual' | 'together' | null;
+    chosenBy: string | null;
+    chosenByUsername: string | null;
+    isCurrentUserChoice: boolean;
+  };
 }
 
 // Create the context
@@ -52,6 +68,11 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
   const [waitingForUser, setWaitingForUser] = useState<string | null>(null);
   const [partnerUsername, setPartnerUsername] = useState<string | null>(null);
+  const [hasSeenTodaysPairingIntro, setHasSeenTodaysPairingIntro] = useState<boolean>(false);
+  const [lastPairingDate, setLastPairingDate] = useState<string | null>(null);
+  
+  // Real-time listener cleanup
+  const [pairingListener, setPairingListener] = useState<Unsubscribe | null>(null);
   
   // Get auth context
   const { user } = useAuth();
@@ -64,8 +85,95 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     } else {
       setCurrentPairing(null);
       setPairingHistory([]);
+      // Clean up listener if user logs out
+      if (pairingListener) {
+        pairingListener();
+        setPairingListener(null);
+      }
     }
+    
+    // Cleanup listener on unmount
+    return () => {
+      if (pairingListener) {
+        pairingListener();
+        setPairingListener(null);
+      }
+    };
   }, [user?.id]);
+  
+  // Set up real-time listener for current pairing when it changes
+  useEffect(() => {
+    if (currentPairing?.id) {
+      setupPairingListener(currentPairing.id);
+    }
+    
+    return () => {
+      if (pairingListener) {
+        pairingListener();
+        setPairingListener(null);
+      }
+    };
+  }, [currentPairing?.id]);
+  
+  /**
+   * Set up real-time listener for pairing updates
+   */
+  const setupPairingListener = (pairingId: string) => {
+    // Clean up existing listener
+    if (pairingListener) {
+      pairingListener();
+    }
+    
+    const pairingRef = doc(db, 'pairings', pairingId);
+    const unsubscribe = onSnapshot(pairingRef, (doc) => {
+      if (doc.exists() && user?.id) {
+        const pairingData = { id: doc.id, ...doc.data() } as Pairing;
+        setCurrentPairing(pairingData);
+        
+        // Update status based on real-time pairing state
+        updatePairingStatus(pairingData);
+      }
+    }, (error) => {
+      console.error('Error listening to pairing updates:', error);
+    });
+    
+    setPairingListener(unsubscribe);
+  };
+  
+  /**
+   * Update pairing status based on current pairing data
+   */
+  const updatePairingStatus = async (pairing: Pairing) => {
+    if (!user?.id) return;
+    
+    try {
+      // Determine the partner's ID and fetch their info
+      const partnerId = pairing.user1_id === user.id ? pairing.user2_id : pairing.user1_id;
+      const partnerUser = await firebaseService.getUserById(partnerId);
+      if (partnerUser) {
+        setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+      }
+      
+      // Update status based on pairing state
+      if (pairing.status === 'completed') {
+        setPairingStatus('completed');
+        setWaitingForUser(null);
+      } else if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
+        // Current user has submitted, waiting for partner
+        setPairingStatus('waiting');
+        setWaitingForUser(pairing.user2_id);
+      } else if (pairing.status === 'user2_submitted' && pairing.user2_id === user.id) {
+        // Current user has submitted, waiting for partner
+        setPairingStatus('waiting');
+        setWaitingForUser(pairing.user1_id);
+      } else {
+        setPairingStatus('idle');
+        setWaitingForUser(null);
+      }
+    } catch (error) {
+      console.error('Error updating pairing status:', error);
+    }
+  };
   
   /**
    * Load the current pairing for today
@@ -85,6 +193,18 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       // Fetch the current pairing from Firebase
       const pairing = await firebaseService.getCurrentPairing(user.id);
       setCurrentPairing(pairing);
+      
+      // Check if this is a new pairing date and reset intro flag if needed
+      if (pairing) {
+        const pairingDate = pairing.date instanceof Date 
+          ? pairing.date.toDateString() 
+          : new Date(pairing.date.seconds * 1000).toDateString();
+        
+        if (lastPairingDate !== pairingDate) {
+          setLastPairingDate(pairingDate);
+          setHasSeenTodaysPairingIntro(false); // Reset intro flag for new pairing date
+        }
+      }
       
       // Update status based on pairing state
       if (pairing) {
@@ -297,11 +417,78 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   };
   
   /**
+   * Mark today's pairing introduction as seen
+   */
+  const markPairingIntroAsSeen = (): void => {
+    setHasSeenTodaysPairingIntro(true);
+  };
+  
+  /**
    * Clear pairing error
    */
   const clearPairingError = (): void => {
     setPairingError(null);
-    setPairingStatus('idle');
+  };
+  
+  /**
+   * Set photo mode for the current pairing (planner mode)
+   */
+  const setPhotoMode = async (mode: 'individual' | 'together'): Promise<void> => {
+    if (!user?.id || !currentPairing) {
+      setPairingError('No active pairing found');
+      return;
+    }
+    
+    try {
+      setPairingError(null);
+      
+      // Update the pairing in Firebase with the photo mode choice
+      await firebaseService.updatePairingPhotoMode(currentPairing.id, mode, user.id);
+      
+      // Refresh the current pairing to get the updated state
+      await loadCurrentPairing();
+    } catch (error) {
+      console.error('Error setting photo mode:', error);
+      setPairingError('Failed to set photo mode');
+    }
+  };
+  
+  /**
+   * Get photo mode status for the current pairing
+   */
+  const getPhotoModeStatus = () => {
+    if (!currentPairing || !user?.id) {
+      return {
+        hasChoice: false,
+        mode: null,
+        chosenBy: null,
+        chosenByUsername: null,
+        isCurrentUserChoice: false,
+      };
+    }
+    
+    const hasChoice = !!currentPairing.photoMode;
+    const mode = currentPairing.photoMode || null;
+    const chosenBy = currentPairing.photoModeChosenBy || null;
+    const isCurrentUserChoice = chosenBy === user.id;
+    
+    // Determine the username of who made the choice
+    let chosenByUsername = null;
+    if (chosenBy) {
+      if (chosenBy === user.id) {
+        chosenByUsername = 'You';
+      } else {
+        chosenByUsername = partnerUsername || 'Your partner';
+      }
+    }
+    
+    return {
+      hasChoice,
+      mode,
+      chosenBy,
+      chosenByUsername,
+      isCurrentUserChoice,
+    };
   };
   
   // Context value
@@ -311,6 +498,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     pairingError,
     waitingForUser,
     partnerUsername,
+    hasSeenTodaysPairingIntro,
     pairingHistory,
     historyLoading,
     loadCurrentPairing,
@@ -319,7 +507,10 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     toggleLikePairing,
     addCommentToPairing,
     sendReminder,
+    markPairingIntroAsSeen,
     clearPairingError,
+    setPhotoMode,
+    getPhotoModeStatus,
   };
   
   return (

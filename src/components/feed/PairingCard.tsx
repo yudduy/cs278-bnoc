@@ -13,7 +13,9 @@ import {
   Image,
   TouchableOpacity,
   Platform,
-  Animated
+  Animated,
+  ScrollView,
+  Dimensions
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { formatDate } from '../../utils/dateUtils';
@@ -23,6 +25,11 @@ import { User, Pairing } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import LikeButton from './social/LikeButton';
 import CommentList from './social/CommentList';
+import PostOptionsModal from '../modals/PostOptionsModal';
+import { reportPost } from '../../services/reportService';
+import firebaseService from '../../services/firebase';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface PairingCardProps {
   pairing: Pairing;
@@ -37,223 +44,273 @@ const PairingCard: React.FC<PairingCardProps> = ({
   user1,
   user2,
   onShare,
-  previewMode = false,
+  previewMode = false
 }) => {
-  // Navigation
   const navigation = useNavigation();
-  
-  // Auth context
-  const { user } = useAuth();
-  
-  // State
-  const [expanded, setExpanded] = useState(false);
-  const [imagePressed, setImagePressed] = useState(false);
-  
-  // Format date
-  const formattedDate = pairing.date ? formatDate(pairing.date, 'MMM d, yyyy') : 'Today';
-  
-  // Check if current user has liked this pairing
-  const userHasLiked = pairing.likedBy?.includes(user?.id || '');
-  
-  /**
-   * Navigate to user profile
-   */
-  const navigateToProfile = (userId: string) => {
-    if (previewMode) return;
-    
-    // @ts-ignore - Navigation typing
-    navigation.navigate('Profile', { userId });
+  const { user: currentUser } = useAuth();
+  const [showFullComments, setShowFullComments] = useState(false);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
+
+  // Helper function to safely convert Timestamp to Date
+  const getDateFromTimestamp = (timestamp: any): Date => {
+    if (!timestamp) return new Date();
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    if (timestamp.seconds) {
+      return new Date(timestamp.seconds * 1000);
+    }
+    return new Date(timestamp);
   };
-  
-  /**
-   * Open pairing detail
-   */
-  const openPairingDetail = () => {
-    if (previewMode) return;
-    
-    // @ts-ignore - Navigation typing
-    navigation.navigate('PairingDetail', { pairingId: pairing.id });
-  };
-  
-  /**
-   * Handle share button press
-   */
-  const handleShare = () => {
-    if (onShare) {
-      onShare(pairing.id);
+
+  // Helper function to get time ago
+  const getTimeAgo = (date: Date): string => {
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const diffInDays = Math.floor(diffInHours / 24);
+
+    if (diffInDays > 0) {
+      return `${diffInDays}d ago`;
+    } else if (diffInHours > 0) {
+      return `${diffInHours}h ago`;
     } else {
-      // Default implementation
-      console.log('Share pairing:', pairing.id);
+      return 'Just now';
     }
   };
-  
-  /**
-   * Handle image press (with scale animation)
-   */
-  const handleImagePress = () => {
-    setImagePressed(true);
-    setTimeout(() => setImagePressed(false), 150);
-    openPairingDetail();
+
+  const handleCardPress = useCallback(() => {
+    if (previewMode) return;
+    
+    // Navigate to pairing detail screen
+    (navigation as any).navigate('PairingDetail', { 
+      pairingId: pairing.id 
+    });
+  }, [navigation, pairing.id, previewMode]);
+
+  const handleUserPress = useCallback((userId: string) => {
+    if (previewMode) return;
+    
+    (navigation as any).navigate('Profile', { 
+      userId 
+    });
+  }, [navigation, previewMode]);
+
+  const handleShare = useCallback(() => {
+    if (onShare) {
+      onShare(pairing.id);
+    }
+  }, [onShare, pairing.id]);
+
+  const handleOptionsPress = useCallback(() => {
+    setShowOptionsModal(true);
+  }, []);
+
+  const handleReportPost = useCallback(async () => {
+    if (!currentUser?.id) return;
+    
+    try {
+      await reportPost(pairing.id, currentUser.id);
+      // Could show a success toast here
+      console.log('Post reported successfully');
+    } catch (error) {
+      console.error('Error reporting post:', error);
+      // Could show an error toast here
+    }
+  }, [pairing.id, currentUser?.id]);
+
+  const handleRetakePhoto = useCallback(() => {
+    if (!currentUser?.id) return;
+    
+    // Navigate to camera with retake parameters
+    (navigation as any).navigate('Camera', {
+      pairingId: pairing.id,
+      userId: currentUser.id,
+      submissionType: 'retake',
+    });
+  }, [navigation, pairing.id, currentUser?.id]);
+
+  // Get available photos for the pairing
+  const getPhotoArray = (): string[] => {
+    const photos: string[] = [];
+    
+    // Add photos in order: user1, then user2
+    if (pairing.user1_photoURL) {
+      photos.push(pairing.user1_photoURL);
+    }
+    if (pairing.user2_photoURL) {
+      photos.push(pairing.user2_photoURL);
+    }
+    
+    return photos;
   };
-  
-  // Format time ago
-  const getTimeAgo = (date: Date) => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.round(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min${diffMins === 1 ? '' : 's'} ago`;
-    
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? '' : 's'} ago`;
-    
-    return formattedDate;
-  };
-  
-  return (
-    <View style={styles.card}>
-      {/* Header with user avatars and names */}
-      <View style={styles.cardHeader}>
-        <View style={styles.userInfo}>
-          {/* User Avatars */}
-          <View style={styles.avatarsContainer}>
-            {user1?.photoURL ? (
-              <Image source={{ uri: user1.photoURL }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.placeholderAvatar]}>
-                <Text style={styles.placeholderText}>
-                  {user1?.username?.charAt(0).toUpperCase() || '?'}
-                </Text>
-              </View>
-            )}
-            
-            {user2?.photoURL ? (
-              <Image source={{ uri: user2.photoURL }} style={[styles.avatar, styles.secondAvatar]} />
-            ) : (
-              <View style={[styles.avatar, styles.placeholderAvatar, styles.secondAvatar]}>
-                <Text style={styles.placeholderText}>
-                  {user2?.username?.charAt(0).toUpperCase() || '?'}
-                </Text>
-              </View>
-            )}
-          </View>
-          
-          {/* Username Format */}
-          <Text style={styles.usernameText}>
-            {user1?.username || 'User'} <Text style={styles.separator}>&lt;&gt;</Text> {user2?.username || 'Partner'}
-          </Text>
+
+  const availablePhotos = getPhotoArray();
+
+  // Handle photo carousel scroll
+  const handlePhotoScroll = useCallback((event: any) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / SCREEN_WIDTH);
+    setCurrentPhotoIndex(index);
+  }, []);
+
+  // Render photo carousel or placeholder
+  const renderPhotoContent = () => {
+    if (availablePhotos.length === 0) {
+      return (
+        <View style={styles.placeholderPhoto}>
+          <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
+          <Text style={styles.placeholderText}>No photo available</Text>
         </View>
-        
-        <View style={styles.metadataContainer}>
-          {pairing.location && (
-            <Text style={styles.locationText}>{pairing.location}</Text>
-          )}
-          <Text style={styles.timeText}>
-            {getTimeAgo(pairing.date ? new Date(pairing.date) : new Date())}
-            {pairing.status === 'late' && ' • Completed late'}
-          </Text>
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.optionsButton}
-          onPress={() => console.log('Options menu')}
-          disabled={previewMode}
+      );
+    }
+
+    if (availablePhotos.length === 1) {
+      // Single photo - no carousel needed
+      return (
+        <Image
+          source={{ uri: availablePhotos[0] }}
+          style={styles.photo}
+          resizeMode="cover"
+        />
+      );
+    }
+
+    // Multiple photos - Instagram-style carousel
+    return (
+      <View style={styles.carouselContainer}>
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handlePhotoScroll}
+          style={styles.photoCarousel}
         >
-          <Ionicons name="ellipsis-vertical" size={20} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Selfie image */}
-      <TouchableOpacity 
-        style={styles.imageContainer} 
-        onPress={handleImagePress}
-        activeOpacity={0.9}
-      >
-        <Animated.View style={[
-          styles.imageWrapper,
-          { transform: [{ scale: imagePressed ? 0.98 : 1 }] }
-        ]}>
-          {pairing.selfieURL ? (
-            <Image 
-              source={{ uri: pairing.selfieURL }}
-              style={styles.selfieImage}
+          {availablePhotos.map((photoURL, index) => (
+            <Image
+              key={index}
+              source={{ uri: photoURL }}
+              style={[styles.photo, { width: SCREEN_WIDTH }]}
               resizeMode="cover"
             />
-          ) : (
-            <View style={styles.noImageContainer}>
-              <Ionicons name="image-outline" size={48} color={COLORS.textSecondary} />
-              <Text style={styles.noImageText}>Image not available</Text>
-            </View>
-          )}
-          
-          {pairing.status === 'flaked' && (
-            <View style={styles.flakeBadge}>
-              <Text style={styles.flakeText}>🥶 Flaked</Text>
-            </View>
-          )}
-        </Animated.View>
-      </TouchableOpacity>
-      
-      {/* Footer with likes, comments, share */}
-      <View style={styles.cardFooter}>
-        <View style={styles.interactionContainer}>
-          {/* Like button */}
-          <LikeButton 
-            pairingId={pairing.id}
-            liked={userHasLiked}
-            likesCount={pairing.likes || 0}
-          />
-          
-          {/* Comment button */}
+          ))}
+        </ScrollView>
+        
+        {/* Page indicator */}
+        <View style={styles.pageIndicator}>
+          <Text style={styles.pageText}>
+            {currentPhotoIndex + 1}/{availablePhotos.length}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={handleCardPress}
+      activeOpacity={previewMode ? 1 : 0.9}
+      disabled={previewMode}
+    >
+      {/* Header with user info */}
+      <View style={styles.header}>
+        <View style={styles.userInfo}>
           <TouchableOpacity 
-            style={styles.interactionButton}
-            onPress={() => setExpanded(!expanded)}
+            onPress={() => handleUserPress(pairing.user1_id)}
             disabled={previewMode}
           >
-            <Ionicons 
-              name="chatbubble-outline" 
-              size={22} 
-              color={COLORS.primary} 
-            />
-            <Text style={styles.interactionText}>
-              {pairing.comments?.length || 0}
+            <Text style={styles.username}>
+              {user1?.username || 'User 1'}
             </Text>
           </TouchableOpacity>
-          
-          {/* Share button */}
+          <Text style={styles.separator}> & </Text>
           <TouchableOpacity 
-            style={styles.interactionButton}
-            onPress={handleShare}
+            onPress={() => handleUserPress(pairing.user2_id)}
             disabled={previewMode}
           >
-            <Ionicons 
-              name="share-outline" 
-              size={22} 
-              color={COLORS.primary} 
-            />
+            <Text style={styles.username}>
+              {user2?.username || 'User 2'}
+            </Text>
           </TouchableOpacity>
         </View>
         
-        {/* Private indicator */}
-        {pairing.isPrivate && (
-          <View style={styles.privateIndicator}>
-            <Ionicons name="lock-closed" size={16} color={COLORS.textSecondary} />
-            <Text style={styles.privateText}>Private</Text>
-          </View>
-        )}
+        <View style={styles.timeContainer}>
+          <Text style={styles.timeText}>
+            {getTimeAgo(getDateFromTimestamp(pairing.date))}
+          </Text>
+          
+          {/* Submission status indicator */}
+          {pairing.status === 'completed' && (
+            <View style={styles.statusIndicator}>
+              <Text style={styles.statusText}>✓ Complete</Text>
+            </View>
+          )}
+          
+          {/* Three dots menu */}
+          <TouchableOpacity 
+            style={styles.optionsButton}
+            onPress={handleOptionsPress}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
-      
-      {/* Expanded comments section */}
-      {expanded && (
-        <View style={styles.commentsContainer}>
-          <CommentList 
+
+      {/* Main photo carousel */}
+      <View style={styles.photoContainer}>
+        {renderPhotoContent()}
+      </View>
+
+      {/* Actions */}
+      {!previewMode && (
+        <View style={styles.actions}>
+          <LikeButton
             pairingId={pairing.id}
-            comments={pairing.comments || []}
+            likesCount={pairing.likesCount || 0}
+            liked={pairing.likedBy?.includes(currentUser?.id || '') || false}
           />
+          
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setShowFullComments(!showFullComments)}
+          >
+            <Ionicons name="chatbubble-outline" size={20} color={COLORS.text} />
+            <Text style={styles.actionText}>
+              {pairing.commentsCount || 0}
+            </Text>
+          </TouchableOpacity>
+
+          {onShare && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleShare}
+            >
+              <Ionicons name="share-outline" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
-    </View>
+
+      {/* Comments */}
+      {showFullComments && !previewMode && (
+        <CommentList
+          pairingId={pairing.id}
+          comments={[]} // Will be loaded by CommentList component
+        />
+      )}
+      
+      {/* Post Options Modal */}
+      <PostOptionsModal
+        visible={showOptionsModal}
+        pairing={pairing}
+        currentUserId={currentUser?.id || ''}
+        onClose={() => setShowOptionsModal(false)}
+        onReport={handleReportPost}
+        onRetake={handleRetakePhoto}
+      />
+    </TouchableOpacity>
   );
 };
 
@@ -266,7 +323,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  cardHeader: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -278,33 +335,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  avatarsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.backgroundLight,
-  },
-  secondAvatar: {
-    marginLeft: -8,
-    borderWidth: 1,
-    borderColor: COLORS.background,
-  },
-  placeholderAvatar: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.secondary,
-  },
-  placeholderText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  usernameText: {
+  username: {
     color: COLORS.primary,
     fontSize: 14,
     fontFamily: 'ChivoBold',
@@ -312,94 +343,90 @@ const styles = StyleSheet.create({
   separator: {
     color: COLORS.textSecondary,
   },
-  metadataContainer: {
+  timeContainer: {
     alignItems: 'flex-end',
     marginRight: 8,
-  },
-  locationText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontFamily: 'ChivoRegular',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   timeText: {
     color: COLORS.textSecondary,
     fontSize: 12,
     fontFamily: 'ChivoRegular',
   },
+  statusIndicator: {
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 4,
+  },
+  statusText: {
+    color: '#4CAF50',
+    fontSize: 10,
+    fontFamily: 'ChivoBold',
+  },
   optionsButton: {
-    padding: 8,
+    padding: 4,
   },
-  imageContainer: {
+  photoContainer: {
+    width: '100%',
+    position: 'relative',
+  },
+  carouselContainer: {
+    width: '100%',
+    position: 'relative',
+  },
+  photoCarousel: {
     width: '100%',
   },
-  imageWrapper: {
+  photo: {
     width: '100%',
-    aspectRatio: 1,
-    backgroundColor: COLORS.backgroundLight,
+    height: SCREEN_WIDTH, // Square aspect ratio
   },
-  selfieImage: {
-    width: '100%',
-    height: '100%',
+  pageIndicator: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  noImageContainer: {
+  pageText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontFamily: 'ChivoBold',
+  },
+  placeholderPhoto: {
     width: '100%',
-    height: '100%',
+    height: SCREEN_WIDTH, // Match photo dimensions
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.backgroundLight,
   },
-  noImageText: {
+  placeholderText: {
     color: COLORS.textSecondary,
     marginTop: 8,
     fontSize: 14,
   },
-  flakeBadge: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  flakeText: {
-    color: COLORS.primary,
-    fontWeight: 'bold',
-  },
-  cardFooter: {
+  actions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  interactionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  interactionButton: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 16,
   },
-  interactionText: {
+  actionText: {
     color: COLORS.primary,
     marginLeft: 4,
     fontSize: 14,
-  },
-  privateIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  privateText: {
-    color: COLORS.textSecondary,
-    marginLeft: 4,
-    fontSize: 12,
-  },
-  commentsContainer: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
   },
 });
 

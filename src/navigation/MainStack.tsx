@@ -1,6 +1,6 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import TabNavigator from './TabNavigator';
+import { TabNavigator } from './MainNavigator';
 import CameraScreen from '../screens/Camera/CameraScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';

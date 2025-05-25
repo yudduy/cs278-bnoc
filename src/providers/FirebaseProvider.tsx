@@ -1,25 +1,31 @@
 /**
- * FirebaseProvider - Updated for Direct Authentication in React Native
+ * FirebaseProvider - Enhanced Firebase Initialization
  * 
- * Handles Firebase initialization and authentication state using AsyncStorage
- * instead of Firebase Auth. Removed web-specific code.
+ * Handles Firebase initialization and provides access to Firebase services
  */
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Import from firebaseInit directly, only db and storage now
-import { isFirebaseInitialized, firebaseApp, db, storage } from '../config/firebaseInit';
+// Import all Firebase services
+import { isFirebaseInitialized, firebaseApp, auth, db, storage } from '../config/firebaseInit';
+import logger from '../utils/logger';
 
 // For debugging purposes
-console.log('FirebaseProvider module loaded - Firebase initialized:', isFirebaseInitialized());
+logger.info('FirebaseProvider module loaded - Firebase initialized:', isFirebaseInitialized());
 
 interface FirebaseContextType {
   isFirebaseReady: boolean;
+  auth: typeof auth;
+  db: typeof db;
+  storage: typeof storage;
 }
 
 const FirebaseContext = createContext<FirebaseContextType>({
-  isFirebaseReady: false
+  isFirebaseReady: false,
+  auth,
+  db,
+  storage
 });
 
 interface FirebaseProviderProps {
@@ -31,13 +37,13 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({ children }) 
   const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log("FirebaseProvider: Initializing Firebase components");
+    logger.info("FirebaseProvider: Initializing Firebase components");
     
     let mounted = true;
     
     // Use a reasonable fallback timeout for Firebase initialization
     const fallbackTimer = setTimeout(() => {
-      console.log("FirebaseProvider: Fallback timeout triggered, forcing ready state");
+      logger.warn("FirebaseProvider: Fallback timeout triggered, forcing ready state");
       if (mounted) {
         setIsFirebaseReady(true);
       }
@@ -47,18 +53,18 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({ children }) 
       try {
         // Check if Firebase is properly initialized
         if (!isFirebaseInitialized()) {
-          console.warn("FirebaseProvider: Firebase not fully initialized");
+          logger.warn("FirebaseProvider: Firebase not fully initialized");
           if (mounted) {
             setInitError("Firebase initialization is incomplete. The app may have limited functionality.");
           }
         } else {
-          console.log("FirebaseProvider: Firebase is initialized");
+          logger.info("FirebaseProvider: Firebase is initialized");
         }
         
         // Check for authenticated user in AsyncStorage
         try {
-          const storedUser = await AsyncStorage.getItem('authenticatedUser');
-          console.log("FirebaseProvider: Checked AsyncStorage for auth", storedUser ? "User found" : "No user");
+          const storedUser = await AsyncStorage.getItem('authenticated_user');
+          logger.info("FirebaseProvider: Checked AsyncStorage for auth", storedUser ? "User found" : "No user");
           
           // We've successfully checked auth state - mark as ready
           if (mounted) {
@@ -66,14 +72,14 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({ children }) 
             clearTimeout(fallbackTimer);
           }
         } catch (authError) {
-          console.error("FirebaseProvider: Error checking auth state:", authError);
+          logger.error("FirebaseProvider: Error checking auth state:", authError);
           if (mounted) {
             setInitError("Auth check error: " + String(authError));
             // Let the fallback timer handle it
           }
         }
       } catch (error) {
-        console.error("FirebaseProvider: Exception during initialization", error);
+        logger.error("FirebaseProvider: Exception during initialization", error);
         if (mounted) {
           setInitError("Initialization error: " + (error instanceof Error ? error.message : String(error)));
           setIsFirebaseReady(true); // Force ready state on exception
@@ -104,7 +110,12 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({ children }) 
 
   // Otherwise, render children
   return (
-    <FirebaseContext.Provider value={{ isFirebaseReady }}>
+    <FirebaseContext.Provider value={{ 
+      isFirebaseReady,
+      auth,
+      db,
+      storage
+    }}>
       {children}
     </FirebaseContext.Provider>
   );

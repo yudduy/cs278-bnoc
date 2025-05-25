@@ -242,6 +242,10 @@ export interface Pairing {
   virtualMeetingLink?: string;
   completedPhotoURL?: string | null;
   lastUpdatedAt?: Timestamp;
+  // Planner mode fields
+  photoMode?: 'individual' | 'together' | null;
+  photoModeChosenBy?: string | null;
+  photoModeChosenAt?: Timestamp | null;
 }
 
 /**

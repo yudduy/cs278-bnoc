@@ -293,31 +293,40 @@ This document outlines the current project directory structure of the Daily Meet
 
 ### Authentication Flow
 
-The authentication flow now includes:
+The authentication flow now includes production-ready Firebase Authentication:
 
-1. **SignInScreen**: Allows users to sign in with their Stanford email addresses
-   - Email validation to ensure only Stanford email addresses
-   - Form validation for required fields
-   - Password toggling for better UX
-   - Links to SignUp and ForgotPassword screens
-   - Test credentials display for development
+1. **AuthScreen**: Combined authentication screen supporting both sign-in and sign-up flows
+   - Email validation to ensure only Stanford email addresses (@stanford.edu)
+   - Real-time username availability checking during registration
+   - Form validation with user-friendly error messages
+   - Password visibility toggle for better UX
+   - Links between sign-in, sign-up, and forgot password screens
+   - **Production Ready**: Test credentials removed, proper error handling
 
-2. **SignUpScreen**: Allows new users to create accounts
-   - Email validation for Stanford emails
-   - Username validation
-   - Password validation with confirmation
-   - Create account action that adds user to Firebase Auth and Firestore
-
-3. **ForgotPasswordScreen**: Provides password reset functionality
-   - Email validation for Stanford emails
-   - Password reset request to Firebase Auth
+2. **ForgotPasswordScreen**: Provides password reset functionality
+   - Stanford email validation
+   - Firebase Auth password reset integration
    - Success confirmation with email instructions
 
+3. **OnboardingScreen**: New user onboarding flow for users who just signed up
+   - Profile setup and permissions
+   - Guided introduction to app features
+
 The authentication flow is controlled by `AuthContext.tsx` which:
-- Checks user authentication state on app launch
-- Conditionally renders Auth screens or main app screens
-- Manages authentication state throughout the app
+- Uses real Firebase Authentication with proper error handling
+- Checks user authentication state on app launch using Firebase Auth state listeners
+- Conditionally renders Auth screens or main app screens based on authentication status
+- Manages authentication state throughout the app with persistence
 - Provides auth-related methods (signIn, signUp, signOut, resetPassword)
+- Integrates with Firebase Firestore for user profile creation
+- Handles new user detection and automatic onboarding redirection
+
+**Firebase v11 + Expo SDK 53 Compatibility:**
+The authentication system has been thoroughly tested and optimized for production use with:
+- Metro configuration fixes for Firebase v11 module resolution
+- Package version compatibility for Expo SDK 53 and React 19
+- Simplified Firebase Auth initialization approach
+- Automatic AsyncStorage persistence handling
 
 ### Onboarding Flow
 

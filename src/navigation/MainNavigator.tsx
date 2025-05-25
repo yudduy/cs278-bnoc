@@ -23,6 +23,9 @@ import FindFriendsScreen from '../screens/Feed/FindFriendsScreen';
 import SettingsScreen from '../screens/Profile/SettingsScreen';
 import BlockedUsersScreen from '../screens/Profile/Settings/BlockedUsersScreen';
 
+// Import the pairing context hook
+import { usePairing } from '../context/PairingContext';
+
 // Create navigators
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -31,9 +34,11 @@ const ChatStack = createStackNavigator();
 
 // Pairing Stack Navigator
 const PairingNavigator = () => {
+  const { hasSeenTodaysPairingIntro } = usePairing();
+  
   return (
     <PairingStack.Navigator
-      initialRouteName="DailyPairing"
+      initialRouteName={hasSeenTodaysPairingIntro ? "CurrentPairing" : "DailyPairing"}
       screenOptions={{
         headerShown: false,
         cardStyle: { backgroundColor: COLORS.background }
@@ -133,3 +138,4 @@ const MainNavigator = () => {
 };
 
 export default MainNavigator;
+export { TabNavigator };

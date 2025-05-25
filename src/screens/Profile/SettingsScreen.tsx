@@ -132,6 +132,7 @@ const SettingsScreen: React.FC = () => {
     pairingNotification: true,
     reminderNotification: true,
     completionNotification: true,
+    chatNotification: true,
     quietHoursStart: 22,
     quietHoursEnd: 8,
   });

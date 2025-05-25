@@ -29,7 +29,8 @@ import { usePairing } from '../../context/PairingContext';
 import { useAuth } from '../../context/AuthContext';
 import LikeButton from '../../components/feed/social/LikeButton';
 import CommentList from '../../components/feed/social/CommentList';
-import firebaseService from '../../services/firebase';
+import * as pairingService from '../../services/pairingService';
+import * as userService from '../../services/userService';
 import { formatDate } from '../../utils/dateUtils';
 import { Pairing, User } from '../../types';
 
@@ -64,92 +65,39 @@ const PairingDetailScreen: React.FC = () => {
       try {
         setLoading(true);
         
-        // Get pairing data
-        const pairingDoc = await firebaseService.getUserPairingHistory(user?.id || '', 10);
-        const foundPairing = pairingDoc.find(p => p.id === pairingId);
+        // Get pairing data using the proper service
+        const pairingData = await pairingService.getPairingById(pairingId);
         
-        if (!foundPairing) {
-          // For demo, create a mock pairing
-          const mockPairing: Pairing = {
-            id: pairingId,
-            date: { seconds: Date.now() / 1000 } as any,
-            expiresAt: { seconds: (Date.now() + 86400000) / 1000 } as any,
-            users: ['user1', 'user2'],
-            status: 'completed',
-            selfieURL: 'https://picsum.photos/600/800?random=1',
-            frontImage: 'https://picsum.photos/300/400?random=1a',
-            backImage: 'https://picsum.photos/300/400?random=1b',
-            completedAt: { seconds: Date.now() / 1000 } as any,
-            isPrivate: false,
-            likes: 5,
-            likedBy: ['user3', 'user4'],
-            comments: [
-              {
-                id: 'comment1',
-                userId: 'user3',
-                text: 'Great selfie! Love the location!',
-                createdAt: { seconds: Date.now() / 1000 } as any,
-                username: 'Kelvin',
-                userPhotoURL: 'https://picsum.photos/100/100?random=3'
-              }
-            ],
-            virtualMeetingLink: 'https://meet.jitsi.si/DailyMeetupSelfie-pairing1'
-          };
-          
-          setPairing(mockPairing);
-        } else {
-          setPairing(foundPairing);
+        if (!pairingData) {
+          Alert.alert('Error', 'Pairing not found.');
+          navigation.goBack();
+          return;
         }
         
-        // Get user data
-        const mockUsers: Record<string, User> = {
-          'user1': {
-            id: 'user1',
-            email: 'justin@stanford.edu',
-            username: 'justin',
-            displayName: 'Justin',
-            createdAt: { seconds: Date.now() / 1000 } as any,
-            lastActive: { seconds: Date.now() / 1000 } as any,
-            isActive: true,
-            flakeStreak: 0,
-            maxFlakeStreak: 2,
-            photoURL: 'https://picsum.photos/100/100?random=1',
-            blockedIds: [],
-            notificationSettings: {
-              pairingNotification: true,
-              reminderNotification: true,
-              completionNotification: true,
-              quietHoursStart: 22,
-              quietHoursEnd: 8
-            },
-            snoozeTokensRemaining: 1,
-            snoozeTokenLastRefilled: { seconds: Date.now() / 1000 } as any,
-          },
-          'user2': {
-            id: 'user2',
-            email: 'duy@stanford.edu',
-            username: 'duy',
-            displayName: 'Duy',
-            createdAt: { seconds: Date.now() / 1000 } as any,
-            lastActive: { seconds: Date.now() / 1000 } as any,
-            isActive: true,
-            flakeStreak: 0,
-            maxFlakeStreak: 5,
-            photoURL: 'https://picsum.photos/100/100?random=2',
-            blockedIds: [],
-            notificationSettings: {
-              pairingNotification: true,
-              reminderNotification: true,
-              completionNotification: true,
-              quietHoursStart: 22,
-              quietHoursEnd: 8
-            },
-            snoozeTokensRemaining: 1,
-            snoozeTokenLastRefilled: { seconds: Date.now() / 1000 } as any,
-          },
-        };
+        setPairing(pairingData);
         
-        setUsers(mockUsers);
+        // Get user data for both users in the pairing
+        const usersData: Record<string, User> = {};
+        
+        try {
+          const user1Data = await userService.getUserById(pairingData.user1_id);
+          if (user1Data) {
+            usersData[pairingData.user1_id] = user1Data;
+          }
+        } catch (error) {
+          console.error(`Error fetching user1 data (${pairingData.user1_id}):`, error);
+        }
+        
+        try {
+          const user2Data = await userService.getUserById(pairingData.user2_id);
+          if (user2Data) {
+            usersData[pairingData.user2_id] = user2Data;
+          }
+        } catch (error) {
+          console.error(`Error fetching user2 data (${pairingData.user2_id}):`, error);
+        }
+        
+        setUsers(usersData);
         
         // Start animations after loading
         Animated.timing(fadeAnim, {
@@ -211,8 +159,8 @@ const PairingDetailScreen: React.FC = () => {
   };
   
   // Get user display info
-  const user1 = users[pairing?.users[0] || ''];
-  const user2 = users[pairing?.users[1] || ''];
+  const user1 = users[pairing?.user1_id || ''];
+  const user2 = users[pairing?.user2_id || ''];
   
   // Check if current user has liked this pairing
   const userHasLiked = pairing?.likedBy?.includes(user?.id || '');
@@ -316,12 +264,23 @@ const PairingDetailScreen: React.FC = () => {
                 { transform: [{ scale: imageScale }] },
               ]}
             >
-              {pairing.selfieURL ? (
-                <Image
-                  source={{ uri: pairing.selfieURL }}
-                  style={styles.pairingImage}
-                  resizeMode="cover"
-                />
+              {(pairing.user1_photoURL || pairing.user2_photoURL) ? (
+                <View style={styles.combinedImageContainer}>
+                  {pairing.user1_photoURL && (
+                    <Image
+                      source={{ uri: pairing.user1_photoURL }}
+                      style={[styles.pairingImage, pairing.user2_photoURL && styles.halfImage]}
+                      resizeMode="cover"
+                    />
+                  )}
+                  {pairing.user2_photoURL && (
+                    <Image
+                      source={{ uri: pairing.user2_photoURL }}
+                      style={[styles.pairingImage, pairing.user1_photoURL && styles.halfImage]}
+                      resizeMode="cover"
+                    />
+                  )}
+                </View>
               ) : (
                 <View style={styles.noImageContainer}>
                   <Ionicons name="image-outline" size={64} color={COLORS.textSecondary} />
@@ -355,7 +314,7 @@ const PairingDetailScreen: React.FC = () => {
               <LikeButton
                 pairingId={pairing.id}
                 liked={!!userHasLiked}
-                likesCount={pairing.likes || 0}
+                likesCount={pairing.likesCount || 0}
               />
               
               <View style={styles.commentsCounter}>
@@ -365,7 +324,7 @@ const PairingDetailScreen: React.FC = () => {
                   color={COLORS.textSecondary}
                 />
                 <Text style={styles.commentsCount}>
-                  {pairing.comments?.length || 0}
+                  {pairing.commentsCount || 0}
                 </Text>
               </View>
               
@@ -387,7 +346,7 @@ const PairingDetailScreen: React.FC = () => {
             <Text style={styles.commentsTitle}>Comments</Text>
             <CommentList
               pairingId={pairing.id}
-              comments={pairing.comments || []}
+              comments={[]}
             />
           </View>
           
@@ -494,9 +453,17 @@ const styles = StyleSheet.create({
     height: SCREEN_WIDTH * 1.25, // 5:4 aspect ratio
     backgroundColor: COLORS.backgroundLight,
   },
+  combinedImageContainer: {
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+  },
   pairingImage: {
     width: '100%',
     height: '100%',
+  },
+  halfImage: {
+    width: '50%',
   },
   noImageContainer: {
     width: '100%',

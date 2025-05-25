@@ -1,252 +1,247 @@
-# BNOC - Daily Meetup Selfie App
+# BNOC - Daily Meetup Selfies
 
-BNOC (Be Nice Or Consequences) is a social mobile application designed for daily selfie exchanges between pairs of users. Similar to BeReal, it encourages authentic social connections through time-limited photo exchanges.
+A React Native app for Stanford students to connect through daily paired photo challenges. Built with TypeScript, Firebase, and modern mobile development practices.
 
-## Overview
+## 🌟 Features
 
-The app randomly pairs users daily, requiring them to take and share selfies with their partners. After both users submit their photos, the completed pairing is visible in the global feed (if set to public) and in each user's personal feed.
+### Core Functionality
+- **Daily Pairings**: Get matched with another Stanford student each day
+- **Photo Challenges**: Take and share selfies with your daily partner
+- **Real-time Sync**: Live updates when partners submit photos
+- **Social Feed**: View completed pairings from the community
+- **Chat Integration**: Communicate with your daily partner
 
-## Core Features
+### Planner Mode
+- **First-User Choice**: The first user to open the app chooses photo mode
+- **Individual vs Together**: Choose to meet up or take separate photos
+- **Smart Notifications**: Partner sees the chosen mode with clear instructions
 
-- **Daily Pairings**: Users are randomly paired each day to exchange selfies
-- **Photo Sharing**: Simple camera interface for capturing and sharing selfies
-- **Feed System**: Personal and global feeds to view completed pairings
-- **Friend System**: Add friends to increase chances of being paired with connections
-- **Reminders**: Notification system to remind users to complete their pairings
-- **Chat**: In-app messaging between paired users
+### Technical Features
+- **Duplicate Prevention**: Robust checks to prevent multiple photo submissions
+- **Real-time Updates**: Firebase listeners for instant feed and pairing updates
+- **Toast Notifications**: User-friendly feedback system
+- **Accessibility**: Full accessibility support with screen reader compatibility
+- **Type Safety**: Comprehensive TypeScript implementation
 
-## Technical Implementation
+## 🏗️ Architecture
 
-### Data Model
+### Project Structure
+```
+src/
+├── components/           # Reusable UI components
+│   ├── camera/          # Camera and photo preview components
+│   ├── feed/            # Feed-related components
+│   ├── modals/          # Modal components (consolidated)
+│   ├── notifications/   # Toast and notification components
+│   └── profile/         # Profile-related components
+├── context/             # React Context providers
+│   ├── AuthContext.tsx  # Authentication state management
+│   ├── FeedContext.tsx  # Feed data with real-time updates
+│   ├── PairingContext.tsx # Pairing management with live sync
+│   └── ToastContext.tsx # Global toast notifications
+├── screens/             # Screen components
+│   ├── Auth/           # Authentication screens
+│   ├── Camera/         # Camera and photo preview screens
+│   ├── Feed/           # Feed display screens
+│   ├── Pairing/        # Daily pairing screens
+│   └── Profile/        # Profile and settings screens
+├── services/            # External service integrations
+│   ├── authService.ts   # Authentication with duplicate prevention
+│   ├── firebase.ts      # Firebase service facade
+│   ├── pairingService.ts # Pairing operations
+│   └── feedService.ts   # Feed management
+├── navigation/          # Navigation configuration
+├── config/             # App configuration
+├── types/              # TypeScript type definitions
+└── utils/              # Utility functions
+```
 
-The app uses Firebase Firestore with the following key collections:
+### Key Components
 
-- **users**: User profiles and authentication information
-- **pairings**: Daily pairing records with photo submissions
-- **globalFeed**: Public completed pairings
-- **notifications**: User notification records
-- **comments**: Comments on pairings
+#### PhotoModeSelectionModal
+**Location**: `src/components/modals/PhotoModeSelectionModal.tsx`
 
-### Recent Improvements
+Enhanced modal component supporting both regular photo mode selection and planner mode functionality.
 
-#### 1. Firebase Integration
+**Features**:
+- Dynamic content based on `isPlannerMode` prop
+- Accessibility support with proper labels and hints
+- Input validation and error handling
+- Customizable titles and descriptions
 
-- Replaced all mock data with real Firebase Firestore data
-- Implemented Firebase Storage for photo uploads
-- Added batch operations for atomic writes across multiple documents
-- Added retry logic for handling WebChannelConnection RPC errors
+**Usage**:
+```tsx
+<PhotoModeSelectionModal
+  visible={showModal}
+  onSelectMode={handleModeSelection}
+  onCancel={handleCancel}
+  partnerName="John Doe"
+  isPlannerMode={!photoModeStatus.hasChoice}
+  accessibilityLabel="Photo mode selection modal"
+/>
+```
 
-#### 2. Pairing System Enhancements
+#### PhotoPreviewScreen
+**Location**: `src/screens/Camera/PhotoPreviewScreen.tsx`
 
-- Improved `getCurrentPairing()` with better validation and error handling
-- Enhanced `updatePairingWithPhoto()` to track submission status properly
-- Added "waiting for partner" state with clear UI feedback
-- Implemented robust notification flow between paired users
-- Added proper completion flow that publishes to global feed
+Enhanced photo preview with comprehensive duplicate prevention.
 
-#### 3. Feed System
+**Features**:
+- Submission attempt tracking with unique keys
+- Validation of existing submissions
+- User-friendly error messages
+- Progress state management
+- Accessibility support
 
-- Optimized `getFeed()` and `getGlobalFeed()` with batch fetching
-- Implemented `publishPairingToFeed()` for consistent feed publishing
-- Added proper tracking of likes and comments
-- Improved pagination performance
+#### PairingContext
+**Location**: `src/context/PairingContext.tsx`
 
-#### 4. User Connections
+Real-time pairing management with Firebase listeners.
 
-- Enhanced `updateConnection()` to handle mutual connections with atomic batch operations
-- Added proper connection count tracking
-- Updated `getAllUsers()` to fetch real users for the "Add Friends" feature
-- Implemented efficient friend search with proper indexing
+**Features**:
+- Live pairing status updates
+- Photo mode management for planner mode
+- Automatic status detection
+- Partner information caching
 
-#### 5. Notification System
+## 🛡️ Duplicate Prevention
 
-- Fully implemented push notification system with Expo Notifications
-- Added various notification types (pairing, reminder, completion, social)
-- Implemented partner reminders in the pairing context
-- Added local notification scheduling capability
+### Photo Submission Prevention
+The app implements multiple layers of duplicate prevention:
 
-#### 6. UI/UX Improvements
+1. **Submission Key Tracking**: Unique keys prevent exact duplicate submissions
+2. **Status Checking**: Validates if user has already submitted for current pairing
+3. **Progress State**: Prevents multiple simultaneous submissions
+4. **Firebase Validation**: Server-side checks for existing submissions
 
-- Replaced React Native's Image with Expo Image for better caching
-- Enhanced profile screens with real user data and pairing history
-- Added loading states and error handling throughout the app
-- Implemented user statistics for profiles
+### Authentication Duplicates
+- Email and username availability checking
+- Real-time validation during registration
+- Cleanup scripts for existing duplicates
 
-## Architecture
+### Modal Component Consolidation
+- Removed duplicate `PlannerModeModal` component
+- Enhanced `PhotoModeSelectionModal` to handle all use cases
+- Improved reusability and maintainability
 
-The app follows a service-oriented architecture with:
-
-- **Context Providers**: Auth, Pairing, and UI contexts for state management
-- **Service Layer**: Firebase, Pairing, User, Feed, and Notification services
-- **UI Layer**: Screen components with React Navigation
-- **Types**: Comprehensive TypeScript definitions
-
-## Firebase Security
-
-- Rules ensure users can only read/write their own data
-- Global feed entries only allow reads from authenticated users
-- Storage rules restrict uploads to authorized users
-- Batch operations maintain data consistency
-
-## Future Improvements
-
-- Implement real-time updates with Firestore listeners
-- Enhance feed filtering options
-- Improve notification delivery tracking
-- Add in-app notification center
-- Extend chat functionality with image sharing
-
-## Getting Started
-
-1. Clone the repository
-2. Run `npm install` to install dependencies
-3. Set up Firebase project and add configuration
-4. Run `npm start` to start the development server
-5. Use Expo Go app on your device or emulator to run the app
-
-## 📱 Features
-
-- **Daily Pairing System**: Get paired with a new Stanford student each day
-- **Selfie Exchange**: Take and share selfies to complete your daily pairing
-- **Social Feed**: View a feed of completed pairings from the community
-- **User Profiles**: Track statistics like completed meetups and flake streaks
-- **Notification System**: Receive reminders about your daily pairings
-- **Privacy Controls**: Choose which pairings to share publicly
-
-## 🛠️ Technology Stack
-
-- **Frontend**: React Native with Expo
-- **Language**: TypeScript
-- **State Management**: React Context API
-- **Backend**: Firebase (Authentication, Firestore, Storage, Cloud Functions)
-- **Navigation**: React Navigation v6
-- **UI**: Custom components with a dark theme
-
-## 📋 Documentation
-
-The project includes comprehensive documentation:
-
-- [**Architecture Guide**](./doc/ARCHITECTURE.md) - Overview of system design, patterns, and data flow
-- [**Development Guide**](./doc/DEVELOPMENT.md) - Current status, coding standards, and next steps
-- [**Firebase Guide**](./doc/FIREBASE.md) - Database schema, security rules, and Cloud Functions
-- [**Project Structure**](./doc/project-structure.md) - Detailed directory structure and file purpose
-
-## 🚀 Setup & Installation
+## 🔧 Development
 
 ### Prerequisites
+- Node.js 18+
+- React Native CLI
+- Expo CLI
+- iOS Simulator / Android Emulator
 
-- Node.js (v16+) and npm
-- Expo CLI: `npm install -g expo-cli`
-- Firebase account and project
+### Setup
+```bash
+# Install dependencies
+npm install
 
-### Installation Steps
+# iOS setup
+cd ios && pod install && cd ..
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/bnoc.git
-   cd bnoc
-   ```
+# Start development server
+npx expo start
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+# Run on iOS
+npx expo run:ios
 
-3. Create a `.env` file in the root directory with your Firebase configuration:
-   ```
-   FIREBASE_API_KEY=your_api_key
-   FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   FIREBASE_PROJECT_ID=your_project_id
-   FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   FIREBASE_APP_ID=your_app_id
-   GOOGLE_WEB_CLIENT_ID=your_google_client_id
-   ```
+# Run on Android
+npx expo run:android
+```
 
-4. Set up Firebase:
-   - Create a project at [Firebase Console](https://console.firebase.google.com)
-   - Enable Authentication with Google sign-in
-   - Create a Firestore database
-   - Set up Firebase Storage
-   - Deploy the Cloud Functions (see below)
+### Environment Configuration
+Create `.env` file:
+```env
+FIREBASE_API_KEY=your_api_key
+FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+FIREBASE_PROJECT_ID=your_project_id
+# ... other Firebase config
+```
 
-5. Start the development server:
-   ```bash
-   npm start
-   ```
+### Code Quality
+- **TypeScript**: Strict mode enabled for type safety
+- **ESLint**: Configured for React Native and TypeScript
+- **Prettier**: Code formatting
+- **Accessibility**: Comprehensive a11y support
 
-6. Scan the QR code with the Expo Go app on your mobile device.
+## 🔥 Firebase Services
 
-### Setting up Firebase Cloud Functions
+### Authentication
+- Stanford email validation (@stanford.edu)
+- Username uniqueness checking
+- Secure user registration and login
 
-1. Navigate to the functions directory:
-   ```bash
-   cd functions
-   ```
+### Firestore Collections
+- `users`: User profiles and settings
+- `pairings`: Daily pairing data with real-time updates
+- `notifications`: Push notification management
+- `feed`: Denormalized feed data for performance
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### Real-time Updates
+- Pairing status changes
+- Feed updates when photos are submitted
+- Partner activity notifications
 
-3. Deploy the functions:
-   ```bash
-   firebase deploy --only functions
-   ```
+## 🚀 Recent Improvements
 
-## 🧪 Test Data Setup
+### Duplicate Prevention System
+- ✅ Consolidated duplicate modal components
+- ✅ Added comprehensive photo submission prevention
+- ✅ Enhanced error handling and user feedback
+- ✅ Implemented real-time validation
 
-For development, you can populate your Firebase with test data:
+### Code Quality Enhancements
+- ✅ Fixed TypeScript linter errors
+- ✅ Improved component reusability
+- ✅ Enhanced accessibility support
+- ✅ Better error boundary handling
 
-1. Navigate to the scripts directory:
-   ```bash
-   cd scripts
-   ```
+### Performance Optimizations
+- ✅ Real-time Firebase listeners for instant updates
+- ✅ Efficient feed pagination
+- ✅ Optimized component re-renders
+- ✅ Memory leak prevention
 
-2. Run the setup script:
-   ```bash
-   node setupFirebaseTestData.js
-   ```
+## 🤝 Contributing
 
-This will create test users, pairings, and feed entries in your Firebase project.
+### Pull Request Process
+1. Create feature branch from `main`
+2. Implement changes with comprehensive tests
+3. Update documentation for any API changes
+4. Ensure all TypeScript checks pass
+5. Test on both iOS and Android platforms
 
-## 📱 App Structure
+### Code Standards
+- Use TypeScript strict mode
+- Follow React Native best practices
+- Implement accessibility features
+- Add comprehensive error handling
+- Include unit tests for critical functionality
 
-The app follows a layered architecture:
+### Reporting Issues
+- Use GitHub Issues with detailed reproduction steps
+- Include device/OS information
+- Provide relevant logs and screenshots
 
-1. **Presentation Layer**: Screens and UI components
-2. **Business Logic Layer**: Contexts, hooks, and service interfaces
-3. **Data Access Layer**: Firebase services and local storage
+## 📱 Platform Support
 
-Key components include:
-
-- **Context Providers**: `AuthContext`, `PairingContext`, `NotificationContext`
-- **Custom Hooks**: `useAuth`, `usePairing`, `useCamera`, `useFeed`
-- **Firebase Services**: Authentication, Firestore, Storage, Cloud Functions
-
-## 🛣️ App Flow
-
-1. **Authentication**: Users sign in with their Stanford email
-2. **Daily Pairing**: At 5am PT, users are paired with a new person
-3. **Selfie Exchange**: Each user takes a selfie to complete the pairing
-4. **Feed Updates**: Completed pairings appear in user and global feeds
-5. **Social Interaction**: Users can like and comment on pairings
-
-## 👥 Contributing
-
-1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m 'Add my feature'`
-4. Push to the branch: `git push origin feature/my-feature`
-5. Submit a pull request
-
-See [DEVELOPMENT.md](./doc/DEVELOPMENT.md) for coding standards and guidelines.
+- **iOS**: 13.0+
+- **Android**: API 23+ (Android 6.0)
+- **Expo**: SDK 49+
+- **React Native**: 0.72+
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License - see LICENSE file for details.
 
-## 🙏 Acknowledgments
+## 🆘 Support
 
-- Stanford GSB for the original concept
-- All contributors to the project
+For technical issues or questions:
+- Create a GitHub Issue
+- Check existing documentation
+- Review Firebase console for service status
+
+---
+
+**Built with ❤️ for the Stanford community**

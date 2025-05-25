@@ -240,7 +240,9 @@ const FeedScreen: React.FC = () => {
    * Navigate to camera screen
    */
   const navigateToCamera = () => {
-    navigation.navigate('Camera');
+    navigation.navigate('Camera', {
+      submissionType: 'other'
+    });
   };
 
   /**
@@ -284,7 +286,11 @@ const FeedScreen: React.FC = () => {
    * Navigate to profile screen
    */
   const navigateToProfile = () => {
-    navigation.navigate('Profile');
+    // Navigate to Profile tab instead of Profile screen
+    navigation.navigate('TabNavigator', {
+      screen: 'Profile',
+      params: {}
+    });
   };
   
   /**
@@ -324,7 +330,8 @@ const FeedScreen: React.FC = () => {
     // Setup options handler
     const handleOptions = (pairingId: string) => {
       console.log(`Options for pairing ${pairingId}`);
-      // Implement real options menu with Firebase actions
+      // TODO: Show options modal here
+      // For now, we'll implement this in the next phase
     };
     
     // Format timestamp from Firestore Timestamp
@@ -332,16 +339,22 @@ const FeedScreen: React.FC = () => {
       ? item.completedAt.toDate() 
       : new Date();
     
-    // Get the primary image URL to display
-    // With the single camera flow, we'll use the user1_photoURL (if available) as the primary image
-    const imageURL = item.user1_photoURL || item.user2_photoURL || defaultAvatar;
+    // Get the array of image URLs to display
+    const imageURLs: string[] = [];
+    if (item.user1_photoURL) imageURLs.push(item.user1_photoURL);
+    if (item.user2_photoURL) imageURLs.push(item.user2_photoURL);
+    
+    // Fallback to default avatar if no images
+    if (imageURLs.length === 0) {
+      imageURLs.push(defaultAvatar);
+    }
     
     // FIXED: Removed Animated.View wrapper that was causing bounce conflicts
     return (
       <PostCard
         id={item.id}
         users={[user1, user2] as [User, User]}
-        imageURL={imageURL}
+        imageURLs={imageURLs}
         location={location}
         timestamp={timestamp}
         lateBy={0} // Calculate late time if needed
@@ -495,28 +508,6 @@ const FeedScreen: React.FC = () => {
           bounces={false}
           alwaysBounceVertical={false}
         />
-      )}
-      
-      {/* Camera FAB - only shown if user has enough friends and no submitted photo yet */}
-      {shouldShowCameraFab && (
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={navigateToCameraForPairing}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="camera" size={28} color={COLORS.background} />
-        </TouchableOpacity>
-      )}
-      
-      {/* Retake Photo FAB - only shown if user has submitted a photo and pairing isn't expired */}
-      {shouldShowRetakeFab && (
-        <TouchableOpacity
-          style={[styles.fab, styles.retakeFab]}
-          onPress={navigateToDailyPairing}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="camera-outline" size={28} color={COLORS.background} />
-        </TouchableOpacity>
       )}
     </View>
   );

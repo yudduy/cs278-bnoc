@@ -13,10 +13,13 @@ import {
   StyleSheet, 
   Dimensions,
   Modal,
-  Pressable
+  Pressable,
+  ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../config/theme';
+import PostOptionsModal from '../modals/PostOptionsModal';
+import { reportPost } from '../../services/reportService';
 
 // Default avatar URL from Firebase Storage
 const defaultAvatar = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
@@ -31,7 +34,7 @@ interface User {
 interface PostCardProps {
   id: string;
   users: [User, User]; // Exactly two paired users
-  imageURL: string;
+  imageURLs: string[]; // Array of image URLs (1 or 2 photos)
   location?: string;
   timestamp: Date;
   lateBy?: number; // Minutes late, if applicable
@@ -46,7 +49,7 @@ interface PostCardProps {
 const PostCard: React.FC<PostCardProps> = ({ 
   id, 
   users, 
-  imageURL, 
+  imageURLs, 
   location, 
   timestamp, 
   lateBy, 
@@ -58,6 +61,7 @@ const PostCard: React.FC<PostCardProps> = ({
   currentUserLiked = false 
 }) => {
   const [showReactions, setShowReactions] = useState(false);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   
   // Format timestamp to readable time
   const formatTime = (date: Date) => {
@@ -102,6 +106,66 @@ const PostCard: React.FC<PostCardProps> = ({
     { emoji: '⚡', name: 'lightning' }
   ];
   
+  // Handle photo carousel scroll
+  const handlePhotoScroll = (event: any) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / width);
+    setCurrentPhotoIndex(index);
+  };
+
+  // Render photo carousel or single image
+  const renderPhotoContent = () => {
+    if (!imageURLs || imageURLs.length === 0) {
+      return (
+        <Image 
+          source={{ uri: defaultAvatar }} 
+          style={styles.mainImage} 
+          resizeMode="cover" 
+        />
+      );
+    }
+
+    if (imageURLs.length === 1) {
+      // Single photo
+      return (
+        <Image 
+          source={{ uri: imageURLs[0] || defaultAvatar }} 
+          style={styles.mainImage} 
+          resizeMode="cover" 
+        />
+      );
+    }
+
+    // Multiple photos - Instagram-style carousel
+    return (
+      <View style={styles.carouselContainer}>
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handlePhotoScroll}
+          style={styles.photoCarousel}
+        >
+          {imageURLs.map((photoURL, index) => (
+            <Image
+              key={index}
+              source={{ uri: photoURL || defaultAvatar }}
+              style={[styles.mainImage, { width }]}
+              resizeMode="cover"
+            />
+          ))}
+        </ScrollView>
+        
+        {/* Page indicator */}
+        <View style={styles.pageIndicator}>
+          <Text style={styles.pageText}>
+            {currentPhotoIndex + 1}/{imageURLs.length}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+  
   return (
     <View style={styles.container}>
       {/* Header with user avatars, location, and time */}
@@ -143,12 +207,8 @@ const PostCard: React.FC<PostCardProps> = ({
         </TouchableOpacity>
       </View>
       
-      {/* Main image */}
-      <Image 
-        source={{ uri: imageURL || defaultAvatar }} 
-        style={styles.mainImage} 
-        resizeMode="cover" 
-      />
+      {/* Main image carousel */}
+      {renderPhotoContent()}
       
       {/* Footer with reactions */}
       <View style={styles.footer}>
@@ -272,6 +332,27 @@ const styles = StyleSheet.create({
     width: '100%',
     height: width,
     backgroundColor: '#222', // Dark placeholder while loading
+  },
+  carouselContainer: {
+    width: '100%',
+    position: 'relative',
+  },
+  photoCarousel: {
+    width: '100%',
+  },
+  pageIndicator: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pageText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontFamily: 'ChivoBold',
   },
   footer: {
     flexDirection: 'row',

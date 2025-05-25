@@ -1,18 +1,17 @@
 {
   "name": "bnoc-scripts",
   "version": "1.0.0",
-  "description": "Administrative scripts for BNOC Daily Pairing App",
+  "description": "Utility scripts for BNOC app management",
+  "main": "deleteUser.js",
   "scripts": {
-    "diagnose": "node diagnoseDatabaseState.js",
-    "setup-test-data": "node setupFirebaseTestData.js",
-    "standardize-data": "node standardizeUserData.js",
-    "register-user": "node registerUsers.js"
+    "delete-user": "node deleteUser.js"
   },
   "dependencies": {
-    "firebase-admin": "^11.8.0",
-    "uuid": "^9.0.0"
+    "firebase-admin": "^12.0.0"
   },
-  "private": true,
-  "keywords": ["firebase", "admin", "bnoc", "utilities"],
-  "author": "BNOC Team"
-} 
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "author": "BNOC Team",
+  "license": "MIT"
+}

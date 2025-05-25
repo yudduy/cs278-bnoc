@@ -158,6 +158,99 @@ export const profileStyles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  
+  // Pairing Card Styles
+  pairingCard: {
+    backgroundColor: COLORS.backgroundDark,
+    borderRadius: BORDER_RADIUS.lg,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  pairingHeader: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
+  },
+  pairingUserNames: {
+    fontFamily: FONTS.bold,
+    fontSize: 14,
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  separator: {
+    color: COLORS.textSecondary,
+  },
+  pairingDate: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  pairingImagesContainer: {
+    height: 200,
+    position: 'relative',
+  },
+  dualImagesContainer: {
+    flexDirection: 'row',
+    height: '100%',
+  },
+  halfImage: {
+    flex: 1,
+    height: '100%',
+  },
+  singleImageContainer: {
+    height: '100%',
+    position: 'relative',
+  },
+  singleImage: {
+    width: '100%',
+    height: '100%',
+  },
+  missingImageOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 8,
+    alignItems: 'center',
+  },
+  missingImageText: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    color: COLORS.primary,
+  },
+  noImagesContainer: {
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundDark,
+  },
+  noImagesText: {
+    fontFamily: FONTS.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+  },
+  pairingFooter: {
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#333333',
+  },
+  pairingStats: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statText: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    color: COLORS.primary,
+  },
 });
 
 export default profileStyles; 

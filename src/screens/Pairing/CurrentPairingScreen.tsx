@@ -6,7 +6,7 @@
  * and provides buttons for chat and photo submission.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -14,124 +14,141 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   SafeAreaView,
   ScrollView,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { usePairing } from '../../context/PairingContext';
 import { useAuth } from '../../context/AuthContext';
-import AntDesign from "@expo/vector-icons/AntDesign";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS, FONTS, BORDER_RADIUS } from '../../config/theme';
+import firebaseService from '../../services/firebase';
+import { User } from '../../types';
+import logger from '../../utils/logger';
+import PhotoModeSelectionModal, { PhotoMode } from '../../components/modals/PhotoModeSelectionModal';
+import CountdownTimer from '../../components/common/CountdownTimer';
 
 export default function CurrentPairingScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute();
   const { user } = useAuth();
-  const { 
-    currentPairing, 
-    pairingStatus, 
-    loadCurrentPairing,
-    pairingError,
-    clearPairingError 
-  } = usePairing();
+  const { currentPairing, pairingStatus, getPhotoModeStatus } = usePairing();
   
+  const [partner, setPartner] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [timeRemaining, setTimeRemaining] = useState<string>('');
-  const [partnerName, setPartnerName] = useState<string>('');
-  const [partnerPhoto, setPartnerPhoto] = useState<string | null>(null);
+  const [showPhotoModeModal, setShowPhotoModeModal] = useState(false);
   
-  // Load current pairing and partner info
+  // Load partner data once when component mounts
+  const loadPartnerData = useCallback(async () => {
+    if (!currentPairing || !user) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const isUser1 = currentPairing.user1_id === user.id;
+      const partnerId = isUser1 ? currentPairing.user2_id : currentPairing.user1_id;
+      
+      const partnerData = await firebaseService.getUserById(partnerId);
+      setPartner(partnerData);
+    } catch (error) {
+      logger.error('Failed to load partner data', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPairing?.id, user?.id]); // Only depend on IDs, not full objects
+  
   useEffect(() => {
-    const fetchPairingData = async () => {
-      try {
-        setLoading(true);
-        await loadCurrentPairing();
-        
-        // In a real app, would fetch partner data from Firebase
-        // For demo, using mock data from the pairing
-        if (currentPairing) {
-          const isUser1 = currentPairing.user1_id === user?.id;
-          const partnerId = isUser1 ? currentPairing.user2_id : currentPairing.user1_id;
-          
-          // Mock partner data (would normally be fetched)
-          setPartnerName(partnerId === 'user2' ? 'Duy' : 'Justin');
-          setPartnerPhoto(require('../../../assets/images/duy.jpg'));
-        }
-      } catch (error) {
-        console.error('Error loading pairing data:', error);
-        Alert.alert('Error', 'Failed to load pairing information.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchPairingData();
-  }, [user?.id]);
+    loadPartnerData();
+  }, [loadPartnerData]);
   
-  // Calculate time remaining until 10:00 PM PT deadline
-  useEffect(() => {
-    const calculateTimeRemaining = () => {
-      if (!currentPairing?.expiresAt) return;
-      
-      const now = new Date();
-      const expiresAt = currentPairing.expiresAt instanceof Date 
-        ? currentPairing.expiresAt 
-        : new Date(currentPairing.expiresAt.seconds * 1000);
-        
-      // If already expired
-      if (now > expiresAt) {
-        setTimeRemaining('Expired');
-        return;
-      }
-      
-      // Calculate time difference
-      const diffMs = expiresAt.getTime() - now.getTime();
-      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      
-      setTimeRemaining(`${diffHrs}h ${diffMins}m remaining`);
-    };
-    
-    // Calculate initially
-    calculateTimeRemaining();
-    
-    // Update every minute
-    const interval = setInterval(calculateTimeRemaining, 60000);
-    return () => clearInterval(interval);
-  }, [currentPairing?.expiresAt]);
+  // Get pairing photo URLs
+  const isUser1 = currentPairing?.user1_id === user?.id;
+  const userPhotoURL = isUser1 
+    ? currentPairing?.user1_photoURL 
+    : currentPairing?.user2_photoURL;
+  const partnerPhotoURL = isUser1
+    ? currentPairing?.user2_photoURL
+    : currentPairing?.user1_photoURL;
   
-  // Open camera for photo submission
-  const handleTakePhoto = () => {
-    if (currentPairing) {
-      navigation.navigate('Camera', { pairingId: currentPairing.id });
+  // Get photo mode status for planner mode functionality
+  const photoModeStatus = getPhotoModeStatus();
+  
+  // Timer calculation functions
+  const getMatchEndTime = (): Date => {
+    const today = new Date();
+    const endTime = new Date(today);
+    endTime.setHours(23, 0, 0, 0); // 11 PM today
+    
+    // If past 11 PM, set to 11 PM tomorrow
+    if (today > endTime) {
+      endTime.setDate(endTime.getDate() + 1);
+    }
+    return endTime;
+  };
+
+  const getNextMatchTime = (): Date => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(5, 0, 0, 0); // 5 AM next day
+    return tomorrow;
+  };
+
+  // Determine timer state and content
+  const getTimerInfo = () => {
+    if (!currentPairing) return null;
+    
+    const bothPhotosSubmitted = userPhotoURL && partnerPhotoURL;
+    
+    if (bothPhotosSubmitted) {
+      // Both users have submitted - show next match timer
+      return {
+        targetDate: getNextMatchTime(),
+        title: 'Next match in',
+        subtitle: 'Your daily pairing will arrive at 5 AM',
+        iconName: 'calendar-outline'
+      };
     } else {
-      Alert.alert('Error', 'No active pairing found.');
+      // Still waiting for photos - show current match end timer
+      return {
+        targetDate: getMatchEndTime(),
+        title: 'Current match ends in',
+        subtitle: 'Complete your pairing before it expires',
+        iconName: 'hourglass-outline'
+      };
+    }
+  };
+
+  const timerInfo = getTimerInfo();
+  
+  // Navigation handlers
+  const handleTakePhoto = () => {
+    setShowPhotoModeModal(true);
+  };
+  
+  const handlePhotoModeSelection = (mode: PhotoMode) => {
+    setShowPhotoModeModal(false);
+    
+    if (currentPairing && user) {
+      // Camera is in the MainStack, so navigate up from PairingStack
+      (navigation as any).navigate('Camera', {
+        pairingId: currentPairing.id,
+        userId: user.id,
+        submissionType: 'pairing',
+        photoMode: mode
+      });
     }
   };
   
-  // Open chat with partner
+  const handleClosePhotoModeModal = () => {
+    setShowPhotoModeModal(false);
+  };
+  
   const handleOpenChat = () => {
     if (currentPairing) {
-      navigation.navigate('Chat', { 
+      (navigation as any).navigate('Chat', {
         pairingId: currentPairing.id,
-        chatId: currentPairing.chatId,
-        partnerId: currentPairing.user1_id === user?.id 
-          ? currentPairing.user2_id 
-          : currentPairing.user1_id
-      });
-    } else {
-      Alert.alert('Error', 'No active pairing found.');
-    }
-  };
-  
-  // View completed pairing in feed
-  const handleViewInFeed = () => {
-    if (currentPairing) {
-      navigation.navigate('Feed', { 
-        screen: 'FeedScreen', 
-        params: { highlightPairingId: currentPairing.id } 
+        partnerId: partner?.id,
+        partnerName: partner?.displayName || partner?.username
       });
     }
   };
@@ -140,8 +157,8 @@ export default function CurrentPairingScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#006E51" />
-          <Text style={styles.loadingText}>Loading today's pairing...</Text>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading pairing...</Text>
         </View>
       </SafeAreaView>
     );
@@ -150,121 +167,105 @@ export default function CurrentPairingScreen() {
   if (!currentPairing) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.noPairingContainer}>
-          <Text style={styles.noPairingText}>No active pairing for today.</Text>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No active pairing for today.</Text>
         </View>
       </SafeAreaView>
     );
   }
   
-  // Determine user and partner photo submission status
-  const isUser1 = currentPairing.user1_id === user?.id;
-  const userPhotoSubmitted = isUser1 
-    ? !!currentPairing.user1_photoURL 
-    : !!currentPairing.user2_photoURL;
-  const partnerPhotoSubmitted = isUser1
-    ? !!currentPairing.user2_photoURL
-    : !!currentPairing.user1_photoURL;
-  const bothPhotosSubmitted = userPhotoSubmitted && partnerPhotoSubmitted;
+  const bothPhotosSubmitted = userPhotoURL && partnerPhotoURL;
   
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Today's Pairing</Text>
-        <Text style={styles.timeRemainingText}>{timeRemaining}</Text>
-      </View>
-      
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.partnerCard}>
-          <Image 
-            source={partnerPhoto ? { uri: partnerPhoto } : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }}
-            style={styles.partnerPhoto}
-          />
-          
-          <View style={styles.partnerInfo}>
-            <Text style={styles.partnerName}>{partnerName}</Text>
-            <Text style={styles.partnerUsername}>@{
-              currentPairing.user1_id === user?.id 
-                ? currentPairing.user2_id 
-                : currentPairing.user1_id
-            }</Text>
-          </View>
+        {/* Partner Info */}
+        <View style={styles.partnerSection}>
+          <Text style={styles.partnerName}>
+            {partner?.displayName || 'Your Partner'}
+          </Text>
         </View>
         
-        <View style={styles.statusCard}>
-          <Text style={styles.statusTitle}>Photo Submission Status</Text>
-          
-          <View style={styles.statusRow}>
-            <View style={styles.statusItem}>
-              <Text style={styles.statusLabel}>Your Photo</Text>
-              {userPhotoSubmitted ? (
-                <View style={styles.statusBadgeSuccess}>
-                  <AntDesign name="checkcircle" size={16} color="#fff" />
-                  <Text style={styles.statusBadgeText}>Submitted</Text>
-                </View>
-              ) : (
-                <View style={styles.statusBadgePending}>
-                  <AntDesign name="clockcircle" size={16} color="#fff" />
-                  <Text style={styles.statusBadgeText}>Not Submitted</Text>
-                </View>
-              )}
+        {/* Photo Display */}
+        <View style={styles.photoContainer}>
+          {bothPhotosSubmitted ? (
+            // Show combined photo when both submitted
+            <View style={styles.combinedPhotoContainer}>
+              <Image 
+                source={{ uri: userPhotoURL }}
+                style={styles.combinedPhoto}
+                resizeMode="cover"
+              />
+              <Image 
+                source={{ uri: partnerPhotoURL }}
+                style={styles.combinedPhoto}
+                resizeMode="cover"
+              />
             </View>
-            
-            <View style={styles.statusItem}>
-              <Text style={styles.statusLabel}>{partnerName}'s Photo</Text>
-              {partnerPhotoSubmitted ? (
-                <View style={styles.statusBadgeSuccess}>
-                  <AntDesign name="checkcircle" size={16} color="#fff" />
-                  <Text style={styles.statusBadgeText}>Submitted</Text>
-                </View>
-              ) : (
-                <View style={styles.statusBadgePending}>
-                  <AntDesign name="clockcircle" size={16} color="#fff" />
-                  <Text style={styles.statusBadgeText}>Not Submitted</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-        
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleOpenChat}
-          >
-            <Ionicons name="chatbubble-outline" size={24} color="#fff" />
-            <Text style={styles.actionButtonText}>Open Chat with {partnerName}</Text>
-          </TouchableOpacity>
-          
-          {!userPhotoSubmitted && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.primaryButton]}
-              onPress={handleTakePhoto}
-            >
-              <MaterialIcons name="camera-alt" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Take My Photo</Text>
-            </TouchableOpacity>
-          )}
-          
-          {userPhotoSubmitted && !partnerPhotoSubmitted && (
-            <View style={styles.waitingContainer}>
+          ) : userPhotoURL ? (
+            // Show user's photo when only user submitted
+            <View style={styles.singlePhotoContainer}>
+              <Image 
+                source={{ uri: userPhotoURL }}
+                style={styles.singlePhoto}
+                resizeMode="cover"
+              />
               <Text style={styles.waitingText}>
-                Waiting for {partnerName} to submit their photo...
+                Waiting for {partner?.displayName || 'partner'}...
+              </Text>
+            </View>
+          ) : (
+            // Show placeholder when no photos
+            <View style={styles.placeholderContainer}>
+              <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
+              <Text style={styles.placeholderText}>
+                Take your selfie to get started
               </Text>
             </View>
           )}
-          
-          {bothPhotosSubmitted && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.secondaryButton]}
-              onPress={handleViewInFeed}
-            >
-              <AntDesign name="picture" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>View in Feed</Text>
+        </View>
+        
+        {/* Countdown Timer */}
+        {timerInfo && (
+          <View style={styles.timerContainer}>
+            <CountdownTimer
+              targetDate={timerInfo.targetDate}
+              title={timerInfo.title}
+              subtitle={timerInfo.subtitle}
+              iconName={timerInfo.iconName}
+              onExpire={() => {
+                // Could refresh pairing or show notification
+                console.log('Timer expired');
+              }}
+            />
+          </View>
+        )}
+        
+        {/* Action Buttons */}
+        <View style={styles.actionsContainer}>
+          {!userPhotoURL && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleTakePhoto}>
+              <Ionicons name="camera" size={28} color={COLORS.primary} />
             </TouchableOpacity>
           )}
+          
+          <TouchableOpacity style={styles.actionButton} onPress={handleOpenChat}>
+            <Ionicons name="chatbubble-outline" size={28} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
       </ScrollView>
+      <PhotoModeSelectionModal
+        visible={showPhotoModeModal}
+        onSelectMode={handlePhotoModeSelection}
+        onCancel={handleClosePhotoModeModal}
+        partnerName={partner?.displayName || partner?.username}
+        isPlannerMode={!photoModeStatus.hasChoice}
+        accessibilityLabel={
+          photoModeStatus.hasChoice 
+            ? 'Photo mode selection - mode already chosen'
+            : 'Photo mode selection - planner mode'
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -272,165 +273,107 @@ export default function CurrentPairingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    backgroundColor: '#006E51', // Stanford green
-    padding: 16,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  timeRemainingText: {
-    color: '#fff',
-    fontSize: 14,
+    backgroundColor: COLORS.background,
   },
   content: {
-    padding: 16,
-  },
-  partnerCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  partnerPhoto: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 16,
-  },
-  partnerInfo: {
-    flex: 1,
-  },
-  partnerName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  partnerUsername: {
-    fontSize: 14,
-    color: '#777',
-  },
-  statusCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statusItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statusLabel: {
-    fontSize: 14,
-    color: '#555',
-    marginBottom: 8,
-  },
-  statusBadgeSuccess: {
-    flexDirection: 'row',
-    backgroundColor: '#4CAF50',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignItems: 'center',
-  },
-  statusBadgePending: {
-    flexDirection: 'row',
-    backgroundColor: '#FF9800',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignItems: 'center',
-  },
-  statusBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  actionsContainer: {
-    marginBottom: 24,
-  },
-  actionButton: {
-    backgroundColor: '#555',
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexGrow: 1,
+    padding: 24,
     justifyContent: 'center',
-    marginBottom: 12,
-  },
-  primaryButton: {
-    backgroundColor: '#006E51', // Stanford green
-  },
-  secondaryButton: {
-    backgroundColor: '#1976D2', // Blue
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  waitingContainer: {
-    backgroundColor: '#E0E0E0',
-    borderRadius: 8,
-    padding: 16,
     alignItems: 'center',
-  },
-  waitingText: {
-    color: '#555',
-    fontSize: 14,
-    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
   },
   loadingText: {
-    marginTop: 16,
+    color: COLORS.primary,
+    fontFamily: FONTS.regular,
     fontSize: 16,
-    color: '#555',
+    marginTop: 16,
   },
-  noPairingContainer: {
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
   },
-  noPairingText: {
+  emptyText: {
+    color: COLORS.text,
+    fontFamily: FONTS.regular,
     fontSize: 18,
-    color: '#555',
     textAlign: 'center',
+  },
+  partnerSection: {
+    marginBottom: 32,
+  },
+  partnerName: {
+    fontFamily: FONTS.bold,
+    fontSize: 24,
+    color: COLORS.primary,
+    textAlign: 'center',
+  },
+  photoContainer: {
+    width: '100%',
+    maxWidth: 300,
+    marginBottom: 32,
+  },
+  combinedPhotoContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  combinedPhoto: {
+    flex: 1,
+    height: 200,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  singlePhotoContainer: {
+    alignItems: 'center',
+  },
+  singlePhoto: {
+    width: '100%',
+    height: 300,
+    borderRadius: BORDER_RADIUS.lg,
+    marginBottom: 16,
+  },
+  waitingText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  placeholderContainer: {
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.textSecondary,
+    borderStyle: 'dashed',
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  placeholderText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  timerContainer: {
+    width: '100%',
+    marginBottom: 24,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    gap: 24,
+    justifyContent: 'center',
+  },
+  actionButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.backgroundDark,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

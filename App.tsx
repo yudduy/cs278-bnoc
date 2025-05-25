@@ -23,10 +23,12 @@ import { PairingProvider } from './src/context/PairingContext';
 import { FeedProvider } from './src/context/FeedContext';
 import { NotificationProvider } from './src/context/NotificationContext';
 import { ChatProvider } from './src/context/ChatContext';
+import { ToastProvider } from './src/context/ToastContext';
 
 // Navigation
 import MainNavigator from './src/navigation/MainNavigator';
 import AuthNavigator from './src/navigation/AuthNavigator';
+import OnboardingScreen from './src/screens/Auth/OnboardingScreen';
 
 // Import font component
 import AppFonts from './src/components/AppFonts';
@@ -53,9 +55,11 @@ const App: React.FC = () => {
         <StatusBar style="light" />
         <AppFonts>
           <NavigationContainer ref={navigationRef}>
-            <AuthProvider>
-              <AppContent />
-            </AuthProvider>
+            <ToastProvider>
+              <AuthProvider>
+                <AppContent />
+              </AuthProvider>
+            </ToastProvider>
           </NavigationContainer>
         </AppFonts>
       </SafeAreaProvider>
@@ -65,7 +69,7 @@ const App: React.FC = () => {
 
 // Content component that determines which navigator to show based on auth state
 const AppContent: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isNewUser } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   
@@ -125,8 +129,14 @@ const AppContent: React.FC = () => {
   
   return (
     <>
-      {isAuthenticated ? (
-        // User is authenticated, show main app
+      {!isAuthenticated ? (
+        // User is not authenticated, show auth screens
+        <AuthNavigator />
+      ) : isNewUser ? (
+        // User is authenticated but new, show onboarding
+        <OnboardingScreen />
+      ) : (
+        // User is authenticated and not new, show main app
         <PairingProvider>
           <ChatProvider>
             <FeedProvider initialPageSize={10}>
@@ -139,9 +149,6 @@ const AppContent: React.FC = () => {
             </FeedProvider>
           </ChatProvider>
         </PairingProvider>
-      ) : (
-        // User is not authenticated, show auth screens
-        <AuthNavigator />
       )}
     </>
   );

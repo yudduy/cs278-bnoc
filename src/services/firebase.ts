@@ -119,15 +119,15 @@ const firebaseService = {
   completePairing: async (
     pairingId: string,
     userId: string,
-    frontImage: string,
-    backImage: string,
+    photoUrl: string,
     isPrivate: boolean
   ): Promise<void> => {
-    return PairingService.completePairing(pairingId, userId, frontImage, backImage, isPrivate);
+    return PairingService.completePairing(pairingId, userId, photoUrl, isPrivate);
   },
   
   toggleLikePairing: async (pairingId: string, userId: string): Promise<void> => {
-    return PairingService.toggleLikePairing(pairingId, userId);
+    await PairingService.toggleLikePairing(pairingId, userId);
+    // Note: PairingService.toggleLikePairing returns boolean, but we ignore it here for void return
   },
   
   addCommentToPairing: async (
@@ -376,6 +376,30 @@ const firebaseService = {
       console.log(`Pairing ${pairingId} updated successfully`);
     } catch (error) {
       console.error(`Error updating pairing ${pairingId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update pairing photo mode (planner mode)
+   */
+  updatePairingPhotoMode: async (
+    pairingId: string, 
+    mode: 'individual' | 'together', 
+    chooserId: string
+  ): Promise<void> => {
+    try {
+      const updateData = {
+        photoMode: mode,
+        photoModeChosenBy: chooserId,
+        photoModeChosenAt: Timestamp.now(),
+        lastUpdatedAt: Timestamp.now()
+      };
+
+      await firebaseService.updatePairing(pairingId, updateData);
+      console.log(`Photo mode set to ${mode} for pairing ${pairingId} by user ${chooserId}`);
+    } catch (error) {
+      console.error('Error updating pairing photo mode:', error);
       throw error;
     }
   },

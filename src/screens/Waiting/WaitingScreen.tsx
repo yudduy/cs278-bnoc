@@ -28,6 +28,8 @@ import { getTimeRemainingUntilDeadline } from '../../utils/notifications/notific
 import { useNotification } from '../../context/NotificationContext';
 import { RouteProp } from '@react-navigation/native';
 import { CameraStackParamList } from '../../types/navigation';
+import firebaseService from '../../services/firebase';
+import logger from '../../utils/logger';
 
 const WaitingScreen: React.FC = () => {
   // Navigation and route
@@ -93,16 +95,18 @@ const WaitingScreen: React.FC = () => {
       if (!partnerId) return;
       
       try {
-        // In a real app, this would fetch from Firestore
-        // For now, mock some data
-        setPartner({
-          id: partnerId,
-          displayName: 'Partner Name',
-          photoURL: null,
-          username: 'partner',
-        });
+        // Fetch real partner data from Firebase
+        const partnerData = await firebaseService.getUserById(partnerId);
+        if (partnerData) {
+          setPartner({
+            id: partnerData.id,
+            displayName: partnerData.displayName || partnerData.username,
+            photoURL: partnerData.photoURL,
+            username: partnerData.username,
+          });
+        }
       } catch (error) {
-        console.error('Error loading partner data:', error);
+        logger.error('Error loading partner data', error);
       }
     };
     
@@ -161,7 +165,7 @@ const WaitingScreen: React.FC = () => {
         { type: 'reminder_sent' }
       );
     } catch (error) {
-      console.error('Error sending reminder:', error);
+      logger.error('Error sending reminder', error);
       
       // Show error notification
       sendLocalNotification(
@@ -184,7 +188,7 @@ const WaitingScreen: React.FC = () => {
     if (!currentPairing?.virtualMeetingLink) return;
     
     // In a real app, would open the virtual meeting link
-    console.log('Starting virtual meeting:', currentPairing.virtualMeetingLink);
+    logger.info('Starting virtual meeting', { virtualMeetingLink: currentPairing.virtualMeetingLink });
     
     // Show notification
     sendLocalNotification(

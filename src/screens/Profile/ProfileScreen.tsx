@@ -46,6 +46,7 @@ const ProfileScreen: React.FC = () => {
   const [totalFlakes, setTotalFlakes] = useState(0);
   const [recentPairings, setRecentPairings] = useState<Pairing[]>([]);
   const [userStats, setUserStats] = useState<any>(null);
+  const [partnerUsers, setPartnerUsers] = useState<Record<string, User>>({});
 
   // Navigate to settings
   const handleSettingsPress = () => {
@@ -87,6 +88,28 @@ const ProfileScreen: React.FC = () => {
       // Fetch recent pairings
       const pairings = await pairingService.getUserPairingHistory(user.id, 3);
       setRecentPairings(pairings);
+      
+      // Fetch partner user data for each pairing
+      const partnerUserPromises = pairings.map(async (pairing) => {
+        const partnerId = pairing.user1_id === user.id ? pairing.user2_id : pairing.user1_id;
+        try {
+          const partnerUser = await userService.getUserById(partnerId);
+          return { [partnerId]: partnerUser };
+        } catch (error) {
+          console.error(`Error fetching partner user ${partnerId}:`, error);
+          return { [partnerId]: null };
+        }
+      });
+      
+      const partnerUserResults = await Promise.all(partnerUserPromises);
+      const partnerUsersMap: Record<string, User> = {};
+      partnerUserResults.forEach(userObj => {
+        const [userId, userData] = Object.entries(userObj)[0];
+        if (userData) {
+          partnerUsersMap[userId] = userData;
+        }
+      });
+      setPartnerUsers(partnerUsersMap);
     } catch (error) {
       console.error('Error loading profile data:', error);
     } finally {
@@ -128,39 +151,100 @@ const ProfileScreen: React.FC = () => {
     );
   }
   
-  // Helper function to get user info for render
-  const getUsersForPairing = (pairing: Pairing): [any, any] => {
-    const user1 = {
-      id: pairing.user1_id,
-      username: 'User 1' // Placeholder until we have actual usernames
-    };
+  // Render a pairing card for profile - shows dual images and real user names
+  const renderProfilePairingCard = ({ item }: { item: Pairing }) => {
+    const partnerId = item.user1_id === user?.id ? item.user2_id : item.user1_id;
+    const partnerUser = partnerUsers[partnerId];
+    const currentUserDisplayName = user?.displayName || user?.username || 'You';
+    const partnerDisplayName = partnerUser?.displayName || partnerUser?.username || 'Unknown User';
     
-    const user2 = {
-      id: pairing.user2_id,
-      username: 'User 2' // Placeholder until we have actual usernames
-    };
-    
-    return [user1, user2];
-  };
-  
-  // Render a pairing card
-  const renderPairingCard = ({ item }: { item: Pairing }) => {
-    // Determine which user photo to show (partner's photo)
-    const imageURL = item.user1_id === user?.id ? item.user2_photoURL : item.user1_photoURL;
-    const users = getUsersForPairing(item);
+    // Check if both photos exist
+    const userPhotoURL = item.user1_id === user?.id ? item.user1_photoURL : item.user2_photoURL;
+    const partnerPhotoURL = item.user1_id === user?.id ? item.user2_photoURL : item.user1_photoURL;
+    const bothPhotosExist = userPhotoURL && partnerPhotoURL;
     
     return (
-      <PostCard
-        id={item.id}
-        users={users}
-        imageURL={imageURL || DEFAULT_PROFILE_IMAGE}
-        timestamp={item.date.toDate()}
-        likesCount={item.likesCount}
-        commentsCount={item.commentsCount}
-        onOptions={() => handlePairingDetail(item.id)}
-        onLike={() => {}}
-        onReact={() => {}}
-      />
+      <TouchableOpacity 
+        style={styles.pairingCard}
+        onPress={() => handlePairingDetail(item.id)}
+      >
+        {/* Header with user names */}
+        <View style={styles.pairingHeader}>
+          <Text style={styles.pairingUserNames}>
+            {currentUserDisplayName} <Text style={styles.separator}>&lt;&gt;</Text> {partnerDisplayName}
+          </Text>
+          <Text style={styles.pairingDate}>
+            {item.date.toDate().toLocaleDateString()}
+          </Text>
+        </View>
+        
+        {/* Image(s) Display */}
+        <View style={styles.pairingImagesContainer}>
+          {bothPhotosExist ? (
+            // Show dual images when both exist
+            <View style={styles.dualImagesContainer}>
+              <Image 
+                source={{ uri: userPhotoURL }}
+                style={styles.halfImage}
+                contentFit="cover"
+              />
+              <Image 
+                source={{ uri: partnerPhotoURL }}
+                style={styles.halfImage}
+                contentFit="cover"
+              />
+            </View>
+          ) : userPhotoURL ? (
+            // Show only user's image if partner didn't submit
+            <View style={styles.singleImageContainer}>
+              <Image 
+                source={{ uri: userPhotoURL }}
+                style={styles.singleImage}
+                contentFit="cover"
+              />
+              <View style={styles.missingImageOverlay}>
+                <Text style={styles.missingImageText}>Partner didn't submit</Text>
+              </View>
+            </View>
+          ) : partnerPhotoURL ? (
+            // Show only partner's image if user didn't submit
+            <View style={styles.singleImageContainer}>
+              <Image 
+                source={{ uri: partnerPhotoURL }}
+                style={styles.singleImage}
+                contentFit="cover"
+              />
+              <View style={styles.missingImageOverlay}>
+                <Text style={styles.missingImageText}>You didn't submit</Text>
+              </View>
+            </View>
+          ) : (
+            // Show placeholder when no photos
+            <View style={styles.noImagesContainer}>
+              <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
+              <Text style={styles.noImagesText}>No photos submitted</Text>
+            </View>
+          )}
+        </View>
+        
+        {/* Footer with stats */}
+        <View style={styles.pairingFooter}>
+          <View style={styles.pairingStats}>
+            {item.likesCount > 0 && (
+              <View style={styles.statItem}>
+                <Ionicons name="thumbs-up" size={14} color={COLORS.primary} />
+                <Text style={styles.statText}>{item.likesCount}</Text>
+              </View>
+            )}
+            {item.commentsCount > 0 && (
+              <View style={styles.statItem}>
+                <Ionicons name="chatbubble" size={14} color={COLORS.primary} />
+                <Text style={styles.statText}>{item.commentsCount}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -265,7 +349,7 @@ const ProfileScreen: React.FC = () => {
           ) : (
             <FlatList
               data={recentPairings}
-              renderItem={renderPairingCard}
+              renderItem={renderProfilePairingCard}
               keyExtractor={(item) => item.id}
               scrollEnabled={false}
               showsVerticalScrollIndicator={false}

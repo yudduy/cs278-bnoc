@@ -5,7 +5,7 @@
  * Shows user avatars, usernames, like/comment counts, and flaked status.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -19,11 +19,10 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { usePairing } from '../../context/PairingContext';
 import { useAuth } from '../../context/AuthContext';
-import { Pairing } from '../../types';
-import AntDesign from "@expo/vector-icons/AntDesign";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import FontAwesome from "@expo/vector-icons/FontAwesome";
+import { Pairing, User } from '../../types';
+import { AntDesign, Ionicons, FontAwesome } from '@expo/vector-icons';
+import firebaseService from '../../services/firebase';
+import logger from '../../utils/logger';
 
 // Get screen width for responsive layout
 const { width } = Dimensions.get('window');
@@ -39,8 +38,52 @@ export default function PairingPostCard({ pairing, onCommentPress }: PairingPost
   const { toggleLikePairing } = usePairing();
   const { user } = useAuth();
   
-  const [isLiked, setIsLiked] = useState(pairing.likedBy.includes(user?.id || ''));
-  const [likesCount, setLikesCount] = useState(pairing.likesCount);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(pairing.likesCount || 0);
+  const [user1Data, setUser1Data] = useState<User | null>(null);
+  const [user2Data, setUser2Data] = useState<User | null>(null);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  
+  // Check if current user has liked this pairing
+  useEffect(() => {
+    if (user?.id && pairing.likedBy) {
+      setIsLiked(pairing.likedBy.includes(user.id));
+    }
+  }, [user?.id, pairing.likedBy]);
+  
+  // Update likes count when prop changes
+  useEffect(() => {
+    setLikesCount(pairing.likesCount || 0);
+  }, [pairing.likesCount]);
+  
+  // Fetch user data for both users in the pairing
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoadingUsers(true);
+        const [user1, user2] = await Promise.all([
+          firebaseService.getUserById(pairing.user1_id),
+          firebaseService.getUserById(pairing.user2_id)
+        ]);
+        
+        setUser1Data(user1);
+        setUser2Data(user2);
+        logger.debug('User data loaded for pairing', { 
+          pairingId: pairing.id, 
+          user1: user1?.username, 
+          user2: user2?.username 
+        });
+      } catch (error) {
+        logger.error('Failed to load user data for pairing', error);
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+    
+    if (pairing.user1_id && pairing.user2_id) {
+      fetchUserData();
+    }
+  }, [pairing.user1_id, pairing.user2_id, pairing.id]);
   
   // Format date for display
   const formatDate = (timestamp: any): string => {
@@ -50,110 +93,91 @@ export default function PairingPostCard({ pairing, onCommentPress }: PairingPost
       ? timestamp 
       : new Date(timestamp.seconds * 1000);
     
-    return date.toLocaleDateString(undefined, {
+    return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
+      year: 'numeric'
     });
   };
   
   // Handle like button press
   const handleLikePress = async () => {
+    if (!user?.id) return;
+    
     try {
-      // Optimistically update UI
-      const newIsLiked = !isLiked;
-      setIsLiked(newIsLiked);
-      setLikesCount(prev => newIsLiked ? prev + 1 : Math.max(0, prev - 1));
-      
-      // Update in backend
       await toggleLikePairing(pairing.id);
+      
+      // Update local state optimistically
+      if (isLiked) {
+        setLikesCount(prev => Math.max(0, prev - 1));
+        setIsLiked(false);
+      } else {
+        setLikesCount(prev => prev + 1);
+        setIsLiked(true);
+      }
     } catch (error) {
-      // Revert UI on error
-      console.error('Error toggling like:', error);
-      setIsLiked(!isLiked);
-      setLikesCount(prev => isLiked ? prev + 1 : Math.max(0, prev - 1));
-      Alert.alert('Error', 'Failed to update like status');
+      logger.error('Failed to toggle like', error);
     }
   };
   
   // Set up safe navigation using NavigationService
   const handlePairingDetailNavigation = (pairingId: string) => {
-    try {
-      // Import at usage time to avoid circular dependencies
-      const NavigationService = require('../../navigation/NavigationService').default;
-      NavigationService.navigate('PairingDetail', { pairingId });
-    } catch (error) {
-      console.error(`Error navigating to PairingDetail:`, error);
-    }
+    navigation.navigate('PairingDetail', { pairingId });
   };
   
   // Handle comment button press
   const handleCommentPress = () => {
-    try {
-      if (onCommentPress) {
-        onCommentPress();
-      } else if (pairing.id) {
-        handlePairingDetailNavigation(pairing.id);
-      }
-    } catch (error) {
-      console.error('Error handling comment press:', error);
+    if (onCommentPress) {
+      onCommentPress();
+    } else {
+      handlePairingDetailNavigation(pairing.id);
     }
   };
   
   // Check if either user has flaked
   const hasFlaked = pairing.status === 'flaked';
   
-  // Get user display info (for demo, using hardcoded values)
-  const getMockUserInfo = (userId: string) => {
-    const mockUsers: Record<string, { name: string, avatar: any }> = {
-      'user1': { 
-        name: 'Justin', 
-        avatar: require('../../../assets/images/justin.jpg') 
-      },
-      'user2': { 
-        name: 'Duy', 
-        avatar: require('../../../assets/images/duy.jpg') 
-      },
-      'user3': { 
-        name: 'Kelvin', 
-        avatar: require('../../../assets/images/kelvin.jpg')
-      },
-      'user4': { 
-        name: 'Vivian', 
-        avatar: require('../../../assets/images/vivian.jpg')
-      },
-      'currentuser': { 
-        name: 'Michael', 
-        avatar: require('../../../assets/images/michael.jpg')
-      },
-    };
-    
-    return mockUsers[userId] || { name: userId, avatar: { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' } };
+  // Get user display info from Firebase data
+  const user1Info = {
+    name: user1Data?.displayName || user1Data?.username || 'User 1',
+    photoURL: user1Data?.photoURL || undefined
   };
   
-  const user1Info = getMockUserInfo(pairing.user1_id);
-  const user2Info = getMockUserInfo(pairing.user2_id);
+  const user2Info = {
+    name: user2Data?.displayName || user2Data?.username || 'User 2', 
+    photoURL: user2Data?.photoURL || undefined
+  };
   
-  // Helper to convert string URLs to image sources
+  // Helper to get image source with fallback
   const getImageSource = (url: string | undefined): ImageSourcePropType => {
-    // For demo, we're using require statements, but in real app, we'd use URLs
     if (!url) {
-      // Return a Firebase placeholder image URL instead of a local asset
-      return { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' };
+      return { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fdefault-avatar.png?alt=media&token=default' };
     }
-    
-    // If it's already a require'd asset (for mock data)
-    if (typeof url === 'number') return url as ImageSourcePropType;
-    
-    // For URI strings
     return { uri: url };
   };
+  
+  // Helper to get photo source with fallback
+  const getPhotoSource = (url: string | undefined): ImageSourcePropType => {
+    if (!url) {
+      return { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fdefault-photo.png?alt=media&token=default' };
+    }
+    return { uri: url };
+  };
+  
+  if (loadingUsers) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
   
   return (
     <View style={styles.container}>
       {/* Header with user avatars and names */}
       <View style={styles.header}>
         <View style={styles.userContainer}>
-          <Image source={user1Info.avatar} style={styles.avatar} />
+          <Image source={getImageSource(user1Info.photoURL)} style={styles.avatar} />
           <Text style={styles.username}>{user1Info.name}</Text>
         </View>
         
@@ -162,7 +186,7 @@ export default function PairingPostCard({ pairing, onCommentPress }: PairingPost
         </View>
         
         <View style={styles.userContainer}>
-          <Image source={user2Info.avatar} style={styles.avatar} />
+          <Image source={getImageSource(user2Info.photoURL)} style={styles.avatar} />
           <Text style={styles.username}>{user2Info.name}</Text>
         </View>
         
@@ -176,7 +200,7 @@ export default function PairingPostCard({ pairing, onCommentPress }: PairingPost
         {/* User 1 Photo */}
         <View style={styles.photoWrapper}>
           <Image 
-            source={pairing.user1_photoURL ? getImageSource(pairing.user1_photoURL) : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }} 
+            source={getPhotoSource(pairing.user1_photoURL || undefined)} 
             style={styles.photo}
             resizeMode="cover"
           />
@@ -188,7 +212,7 @@ export default function PairingPostCard({ pairing, onCommentPress }: PairingPost
         {/* User 2 Photo */}
         <View style={styles.photoWrapper}>
           <Image 
-            source={pairing.user2_photoURL ? getImageSource(pairing.user2_photoURL) : { uri: 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6' }} 
+            source={getPhotoSource(pairing.user2_photoURL || undefined)} 
             style={styles.photo}
             resizeMode="cover"
           />
@@ -354,5 +378,14 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 14,
     color: '#999',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#777',
   },
 }); 
