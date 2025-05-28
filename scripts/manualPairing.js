@@ -134,19 +134,21 @@ async function createDailyPairings(forceDate = null) {
   console.log('🔄 Starting manual pairing algorithm...');
   
   try {
-    // Get active users
+    // Get active users with a simpler query to avoid index issues
+    // Temporarily removing complex filters while indexes build
     const activeUsersSnapshot = await db.collection('users')
       .where('isActive', '==', true)
-      .where('lastActive', '>', admin.firestore.Timestamp.fromDate(
-        new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-      ))
-      .where('flakeStreak', '<', 5) // Skip users with high flake streak
       .get();
     
-    const activeUsers = activeUsersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const activeUsers = activeUsersSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(user => {
+        // Apply filters in code instead of query to avoid index requirements
+        const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+        const hasRecentActivity = user.lastActive && user.lastActive.toDate() > threeDaysAgo;
+        const hasLowFlakeStreak = (user.flakeStreak || 0) < 5;
+        return hasRecentActivity && hasLowFlakeStreak;
+      });
     
     console.log(`📋 Found ${activeUsers.length} active users to pair`);
     

@@ -2,117 +2,181 @@
 
 This directory contains utility scripts for managing the BNOC application.
 
-## User Deletion Script
+## Available Scripts
 
-### Overview
+### 1. Manual Pairing (`manualPairing.js`)
 
-The `deleteUser.js` script provides a comprehensive way to delete a user account from the BNOC app, handling all necessary cleanup operations.
+**Purpose**: Creates daily pairings manually when Cloud Functions fail or for testing.
 
-### Prerequisites
+**Usage**:
+```bash
+node manualPairing.js [optional-date]
+```
 
-1. **Firebase Admin SDK Setup**
-   - Download your Firebase service account key from the Firebase Console
-   - Save it as `serviceAccountKey.json` in this directory
-   - **IMPORTANT**: Never commit this file to version control
+**What it does**:
+- Fetches active users with recent activity and low flake streak
+- Shuffles users and pairs them while avoiding recent repeats  
+- Creates pairing documents and chat rooms
+- Handles waitlisted users with priority for next pairing
 
-2. **Dependencies**
-   ```bash
-   npm install firebase-admin
-   ```
+**Example**:
+```bash
+node manualPairing.js                    # Create pairings for today
+node manualPairing.js 2025-05-29         # Create pairings for specific date
+```
 
-### Usage
+### 2. Database Status Check (`checkStatus.js`)
 
+**Purpose**: Comprehensive health check of the Firebase database.
+
+**Usage**:
+```bash
+node checkStatus.js
+```
+
+**What it shows**:
+- Active users count and details
+- Today's pairings status breakdown
+- Global feed items count
+- Chat rooms and notifications
+- Unread notifications by user
+
+### 3. User Deletion (`deleteUser.js`)
+
+**Purpose**: Safely delete a user account with complete cleanup.
+
+**Usage**:
 ```bash
 node deleteUser.js <username>
 ```
 
-### What the Script Does
+**What it does**:
+- Finds user by username
+- Requires "DELETE" confirmation
+- Updates active pairings (marks as cancelled)
+- Removes user from other users' connections
+- Deletes Firestore document and Firebase Auth account
 
-The deletion script performs the following operations in order:
-
-1. **Find User**: Searches for a user by username in Firestore
-2. **Confirmation**: Requires typing "DELETE" to confirm the operation
-3. **Remove from Pairings**: Updates any active pairings to mark them as cancelled
-4. **Update Connections**: Removes the user from all other users' connections arrays
-5. **Clean Notification Settings**: Removes user's notification preferences
-6. **Delete Firestore Document**: Removes the user document from Firestore
-7. **Delete Firebase Auth**: Removes the user from Firebase Authentication
-
-### Example
-
+**Example**:
 ```bash
-$ node deleteUser.js testuser
-
-🔍 Searching for user with username: testuser
-✅ Found user:
-   - User ID: abc123def456
-   - Email: testuser@stanford.edu
-   - Display Name: Test User
-   - Created: 12/15/2024
-   - Connections: 3
-
-⚠️  Are you sure you want to DELETE user "testuser" (testuser@stanford.edu)?
-This action cannot be undone! Type "DELETE" to confirm: DELETE
-
-🚀 Starting deletion process for user: testuser
-
-🔄 Removing user from active pairings...
-   Found 1 pairing(s) to update
-   - Updating pairing pair_123 (status: pending)
-   ✅ Updated 1 pairing(s)
-
-🔄 Removing user from other users' connections...
-   Found 3 connection(s) to update
-   - Removing from user: user1
-   - Removing from user: user2
-   - Removing from user: user3
-   ✅ Updated connections
-
-🔄 Cleaning up notification settings...
-   ✅ Deleted notification settings
-
-🔄 Deleting user document from Firestore...
-   ✅ Deleted user document from Firestore
-
-🔄 Deleting user from Firebase Authentication...
-   ✅ Deleted user from Firebase Auth
-
-✅ Successfully deleted user: testuser
-
-📊 Summary:
-   - User removed from Firebase Auth
-   - User document deleted from Firestore
-   - User removed from active pairings
-   - User removed from 3 connection(s)
-   - Notification settings cleaned up
+node deleteUser.js testuser
 ```
 
-### Safety Features
+### 4. Test Environment Setup (`testSetup.js`)
 
-- **Username Validation**: Only deletes if exactly one user matches the username
-- **Confirmation Required**: Must type "DELETE" to proceed
-- **Detailed Logging**: Shows what operations are being performed
-- **Error Handling**: Gracefully handles errors and provides detailed feedback
-- **Graceful Shutdown**: Can be interrupted with Ctrl+C
+**Purpose**: Creates a complete test environment with users and sample data.
 
-### Notes
+**Usage**:
+```bash
+node testSetup.js
+```
 
-- Deleted users cannot be recovered
-- Pairings involving the user are marked as "cancelled_user_deleted" rather than deleted
-- Other users' connection counts are properly decremented
-- The script handles cases where the user might not exist in Firebase Auth but exists in Firestore
+**What it creates**:
+- 5 test users with known passwords
+- Friend connections between all users
+- Sample pairings with different statuses
+- Test feed posts and comments
+- Notification examples
 
-### Troubleshooting
+**Test Users Created**:
+- duy@stanford.edu / hardcarry1738
+- jleong22@stanford.edu / abbabb6969  
+- kelvinknguyen@stanford.edu / seaside123
+- ehsu24@stanford.edu / goodta
+- mb@stanford.edu / goodteacher
+
+### 5. Firebase Auth Testing (`testFirebaseAuth.js`)
+
+**Purpose**: Tests Firebase Authentication functionality.
+
+**Usage**:
+```bash
+node testFirebaseAuth.js [command]
+```
+
+**Available commands**:
+- `test` - Run authentication tests
+- `users` - List Firebase Auth users
+- `profiles` - Check Firestore profiles
+- `pairings` - Create fresh pairings
+
+## Prerequisites
+
+All scripts require:
+
+1. **Firebase Service Account Key**:
+   - Download from Firebase Console > Project Settings > Service Accounts
+   - Save as `serviceAccountKey.json` in the project root (not in scripts/)
+   - ⚠️ **Never commit this file to version control**
+
+2. **Dependencies**:
+   ```bash
+   npm install firebase-admin uuid
+   ```
+
+## Common Use Cases
+
+### Emergency Pairing Creation
+If Cloud Functions fail to create daily pairings:
+```bash
+cd scripts
+node manualPairing.js
+```
+
+### Database Health Check
+To verify everything is working:
+```bash
+cd scripts  
+node checkStatus.js
+```
+
+### Clean Environment Setup
+To reset for testing:
+```bash
+cd scripts
+node testSetup.js
+```
+
+### Remove Test User
+To clean up after testing:
+```bash
+cd scripts
+node deleteUser.js testusername
+```
+
+## Script Maintenance Notes
+
+### Recently Fixed Issues (May 2025)
+- **Firestore Index Problems**: Fixed by deploying proper composite indexes for array-contains queries
+- **Manual Pairing Script**: Updated to use simplified queries while indexes build
+- **Cloud Function Scheduling**: Functions now properly run at 5:00 AM and 7:00 AM PT
+
+### Cleanup Completed
+- Removed duplicate/outdated scripts: `debugUsers.js`, `cleanupDuplicateUsernames.js`, `fixMissingProfiles.js`, `setup-firebase-auth.sh`
+- Consolidated functionality into comprehensive remaining scripts
+
+## Safety Features
+
+- **Confirmation prompts** for destructive operations
+- **Detailed logging** of all operations
+- **Error handling** with graceful recovery
+- **Dry-run capabilities** where applicable
+- **Backup creation** before major changes
+
+## Troubleshooting
 
 **"serviceAccountKey.json not found"**
-- Download the service account key from Firebase Console > Project Settings > Service Accounts
-- Save it as `serviceAccountKey.json` in the scripts directory
+- Download the service account key from Firebase Console
+- Save it as `serviceAccountKey.json` in the project root (not scripts folder)
+
+**"Index required" errors**
+- The Cloud Functions team has deployed proper indexes
+- Wait a few minutes for indexes to build, then retry
+
+**"No pairings for today"**
+- Run `node manualPairing.js` to create missing pairings
+- Check Cloud Function logs with `firebase functions:log`
 
 **"Multiple users found"**
-- This indicates duplicate usernames in the database
-- Review the displayed users and manually investigate
-- Consider running the script multiple times for each duplicate
-
-**"User not found in Firebase Auth"**
-- This is normal if the user was created in Firestore but not in Firebase Auth
-- The script will continue with Firestore cleanup
+- Use `node checkStatus.js` to verify database state
+- Manual investigation may be needed for edge cases
