@@ -33,6 +33,7 @@ type FormErrors = {
   password?: string;
   confirmPassword?: string;
   username?: string;
+  general?: string;
 };
 
 const AuthScreen: React.FC = () => {
@@ -47,6 +48,8 @@ const AuthScreen: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [isUsernameAvailable, setIsUsernameAvailable] = useState<boolean | null>(null);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [isEmailAvailable, setIsEmailAvailable] = useState<boolean | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   
   // Authentication context
@@ -65,6 +68,7 @@ const AuthScreen: React.FC = () => {
     setConfirmPassword('');
     setUsername('');
     setIsUsernameAvailable(null);
+    setIsEmailAvailable(null);
   }, [mode, clearError]);
   
   /**
@@ -72,6 +76,30 @@ const AuthScreen: React.FC = () => {
    */
   const isStanfordEmail = (email: string): boolean => {
     return email.toLowerCase().endsWith('@stanford.edu');
+  };
+  
+  /**
+   * Check email availability using authService
+   */
+  const checkEmailAvailability = async (email: string): Promise<boolean> => {
+    if (!email || !email.includes('@')) {
+      return false;
+    }
+    
+    setIsCheckingEmail(true);
+    
+    try {
+      const isAvailable = await authService.isEmailAvailable(email);
+      setIsEmailAvailable(isAvailable);
+      return isAvailable;
+    } catch (error) {
+      console.error('Error checking email:', error);
+      showError('Unable to check email availability. Please try again.');
+      setIsEmailAvailable(null);
+      return false;
+    } finally {
+      setIsCheckingEmail(false);
+    }
   };
   
   /**
@@ -117,12 +145,18 @@ const AuthScreen: React.FC = () => {
   const validateForm = (): boolean => {
     const formErrors: FormErrors = {};
     
-    // Email validation
+    // Email/Username validation
     if (!email.trim()) {
-      formErrors.email = 'Email is required';
-    } else if (!isStanfordEmail(email)) {
-      formErrors.email = 'Must use a Stanford email (@stanford.edu)';
+      formErrors.email = mode === 'signIn' ? 'Email or username is required' : 'Email is required';
+    } else if (mode === 'signUp') {
+      // For sign-up, validate Stanford email
+      if (!isStanfordEmail(email)) {
+        formErrors.email = 'Must use a Stanford email (@stanford.edu)';
+      } else if (isEmailAvailable === false) {
+        formErrors.email = 'This email is already registered. Please sign in instead.';
+      }
     }
+    // For sign-in, we accept both email and username, so no format validation needed
     
     // Password validation
     if (!password) {
@@ -165,15 +199,23 @@ const AuthScreen: React.FC = () => {
         await signIn(email.toLowerCase().trim(), password);
         showSuccess('Welcome back!');
       } else {
-        // One final username availability check
-        const isAvailable = await checkUsernameAvailability(username);
-        if (!isAvailable) {
+        // Final availability checks for sign-up
+        const isEmailStillAvailable = await checkEmailAvailability(email.toLowerCase().trim());
+        if (!isEmailStillAvailable) {
+          setErrors(prev => ({
+            ...prev,
+            email: 'This email is already registered. Please sign in instead.'
+          }));
+          return;
+        }
+        
+        const isUsernameStillAvailable = await checkUsernameAvailability(username);
+        if (!isUsernameStillAvailable) {
           setErrors(prev => ({
             ...prev,
             username: 'Username is already taken'
           }));
-          showError('Username is already taken. Please choose a different one.');
-          return;
+          return; // Don't show toast for validation errors
         }
         
         await signUp(email.toLowerCase().trim(), password, username);
@@ -182,9 +224,17 @@ const AuthScreen: React.FC = () => {
         // and the main App.tsx component will redirect new users to onboarding
       }
     } catch (error: any) {
-      // Show toast notification for auth errors
-      const errorMessage = error?.message || 'An unexpected error occurred. Please try again.';
-      showError(errorMessage);
+      // For sign-in errors, don't show animated toast - just set form error
+      if (mode === 'signIn') {
+        setErrors(prev => ({
+          ...prev,
+          general: error?.message || 'Sign in failed. Please check your credentials.'
+        }));
+      } else {
+        // For sign-up errors, show toast notification
+        const errorMessage = error?.message || 'An unexpected error occurred. Please try again.';
+        showError(errorMessage);
+      }
       console.error('Authentication error:', error);
     }
   };
@@ -253,7 +303,6 @@ const AuthScreen: React.FC = () => {
           {/* Logo and Title */}
           <View style={styles.headerContainer}>
             <Text style={styles.title}>BNOC</Text>
-            <Text style={styles.subtitle}>Daily Meetup Selfies</Text>
           </View>
           
           {/* Form Container */}
@@ -261,6 +310,14 @@ const AuthScreen: React.FC = () => {
             <Text style={styles.formTitle}>
               {mode === 'signIn' ? 'Sign In to Your Account' : 'Create a New Account'}
             </Text>
+            
+            {/* General Error Message for Sign-In */}
+            {errors.general && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={20} color={COLORS.error} />
+                <Text style={styles.authErrorText}>{errors.general}</Text>
+              </View>
+            )}
             
             {/* Error Message from Auth Context */}
             {error && (
@@ -270,30 +327,60 @@ const AuthScreen: React.FC = () => {
               </View>
             )}
             
-            {/* Email Input */}
+            {/* Email/Username Input */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Stanford Email</Text>
+              <Text style={styles.inputLabel}>
+                {mode === 'signIn' ? 'Email or Username' : 'Stanford Email'}
+              </Text>
               <TextInput
                 style={[
                   styles.input,
                   errors.email ? styles.inputError : null
                 ]}
-                placeholder="netid@stanford.edu"
+                placeholder={mode === 'signIn' ? 'Email or username' : 'sunetid@stanford.edu'}
                 placeholderTextColor={COLORS.textSecondary}
-                keyboardType="email-address"
+                keyboardType={mode === 'signIn' ? 'default' : 'email-address'}
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={email}
                 onChangeText={(text) => {
                   setEmail(text);
-                  if (errors.email) {
-                    setErrors(prev => ({ ...prev, email: undefined }));
+                  setIsEmailAvailable(null);
+                  
+                  if (errors.email || errors.general) {
+                    setErrors(prev => ({ 
+                      ...prev, 
+                      email: undefined,
+                      general: undefined 
+                    }));
+                  }
+                  
+                  // Check email availability for sign-up mode only
+                  if (mode === 'signUp' && text.toLowerCase().endsWith('@stanford.edu')) {
+                    checkEmailAvailability(text.toLowerCase().trim());
                   }
                 }}
                 editable={!isLoading}
               />
               {errors.email && (
                 <Text style={styles.errorText}>{errors.email}</Text>
+              )}
+              {mode === 'signUp' && email.toLowerCase().endsWith('@stanford.edu') && (
+                <View style={styles.availabilityContainer}>
+                  {isCheckingEmail ? (
+                    <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                  ) : isEmailAvailable === true ? (
+                    <>
+                      <Ionicons name="checkmark-circle" size={16} color="#4caf50" />
+                      <Text style={[styles.availabilityText, { color: '#4caf50' }]}>Email available</Text>
+                    </>
+                  ) : isEmailAvailable === false ? (
+                    <>
+                      <Ionicons name="close-circle" size={16} color="#ff4444" />
+                      <Text style={[styles.availabilityText, { color: '#ff4444' }]}>Email already registered</Text>
+                    </>
+                  ) : null}
+                </View>
               )}
             </View>
             
@@ -343,8 +430,12 @@ const AuthScreen: React.FC = () => {
                   value={password}
                   onChangeText={(text) => {
                     setPassword(text);
-                    if (errors.password) {
-                      setErrors(prev => ({ ...prev, password: undefined }));
+                    if (errors.password || errors.general) {
+                      setErrors(prev => ({ 
+                        ...prev, 
+                        password: undefined,
+                        general: undefined 
+                      }));
                     }
                   }}
                   editable={!isLoading}
@@ -460,11 +551,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: 2,
   },
-  subtitle: {
-    fontFamily: FONTS.regular,
-    fontSize: 18,
-    color: COLORS.textSecondary,
-  },
   formContainer: {
     backgroundColor: COLORS.backgroundLight,
     borderRadius: BORDER_RADIUS.lg,
@@ -481,17 +567,17 @@ const styles = StyleSheet.create({
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: 'rgba(255, 68, 68, 0.1)',
     borderRadius: BORDER_RADIUS.md,
     padding: 12,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#ff4444',
   },
   authErrorText: {
     fontFamily: FONTS.regular,
     fontSize: 14,
-    color: COLORS.primary,
+    color: '#ff4444',
     marginLeft: 8,
     flex: 1,
   },
@@ -516,13 +602,14 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   inputError: {
-    borderColor: COLORS.primary,
+    borderColor: '#ff4444',
     borderWidth: 2,
+    backgroundColor: 'rgba(255, 68, 68, 0.1)',
   },
   errorText: {
     fontFamily: FONTS.regular,
     fontSize: 14,
-    color: COLORS.primary,
+    color: '#ff4444',
     marginTop: 4,
   },
   helperText: {

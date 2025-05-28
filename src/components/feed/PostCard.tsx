@@ -125,18 +125,21 @@ const PostCard: React.FC<PostCardProps> = ({
       );
     }
 
-    if (imageURLs.length === 1) {
-      // Single photo
+    // For individual mode or when only one unique photo is available, show single photo
+    const uniquePhotos = [...new Set(imageURLs)]; // Remove duplicates
+    
+    if (uniquePhotos.length === 1) {
+      // Single photo (including individual mode)
       return (
         <Image 
-          source={{ uri: imageURLs[0] || defaultAvatar }} 
+          source={{ uri: uniquePhotos[0] || defaultAvatar }} 
           style={styles.mainImage} 
           resizeMode="cover" 
         />
       );
     }
 
-    // Multiple photos - Instagram-style carousel
+    // Multiple unique photos - Instagram-style carousel
     return (
       <View style={styles.carouselContainer}>
         <ScrollView
@@ -146,7 +149,7 @@ const PostCard: React.FC<PostCardProps> = ({
           onMomentumScrollEnd={handlePhotoScroll}
           style={styles.photoCarousel}
         >
-          {imageURLs.map((photoURL, index) => (
+          {uniquePhotos.map((photoURL, index) => (
             <Image
               key={index}
               source={{ uri: photoURL || defaultAvatar }}
@@ -159,7 +162,7 @@ const PostCard: React.FC<PostCardProps> = ({
         {/* Page indicator */}
         <View style={styles.pageIndicator}>
           <Text style={styles.pageText}>
-            {currentPhotoIndex + 1}/{imageURLs.length}
+            {currentPhotoIndex + 1}/{uniquePhotos.length}
           </Text>
         </View>
       </View>

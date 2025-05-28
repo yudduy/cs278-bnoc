@@ -129,6 +129,28 @@ export interface BlockedUser {
 }
 
 // -----------------------------
+// MEETUP RELATED TYPES
+// -----------------------------
+
+/**
+ * Meetup type for events and activities
+ */
+export interface Meetup {
+  id: string;
+  title: string;
+  description: string;
+  category: 'Run' | 'Workout' | 'Yoga' | 'Games' | 'Meditation' | 'Lectures';
+  date: Timestamp;
+  location: string;
+  createdBy: string;
+  participants: string[];
+  maxParticipants?: number;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// -----------------------------
 // NOTIFICATION RELATED TYPES
 // -----------------------------
 

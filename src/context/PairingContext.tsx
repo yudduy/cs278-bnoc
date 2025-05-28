@@ -5,7 +5,7 @@
  * Implements real Firebase service calls for pairing operations.
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -70,6 +70,8 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   const [partnerUsername, setPartnerUsername] = useState<string | null>(null);
   const [hasSeenTodaysPairingIntro, setHasSeenTodaysPairingIntro] = useState<boolean>(false);
   const [lastPairingDate, setLastPairingDate] = useState<string | null>(null);
+  const [hasLoggedNoPairing, setHasLoggedNoPairing] = useState<boolean>(false);
+  const [hasLoggedCurrentPairingDebug, setHasLoggedCurrentPairingDebug] = useState<boolean>(false);
   
   // Real-time listener cleanup
   const [pairingListener, setPairingListener] = useState<Unsubscribe | null>(null);
@@ -150,23 +152,77 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       // Determine the partner's ID and fetch their info
       const partnerId = pairing.user1_id === user.id ? pairing.user2_id : pairing.user1_id;
       const partnerUser = await firebaseService.getUserById(partnerId);
-      if (partnerUser) {
-        setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+      
+      // If partner doesn't exist, gracefully handle by treating as no pairing
+      if (!partnerUser) {
+        console.warn('DEBUG: Partner user does not exist:', partnerId, 'for pairing:', pairing.id, '- treating as no pairing');
+        
+        setCurrentPairing(null);
+        setPairingStatus('idle');
+        setPairingError(null);
+        setWaitingForUser(null);
+        setPartnerUsername(null);
+        return;
       }
       
-      // Update status based on pairing state
+      setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+      
+      console.log('DEBUG: Updating pairing status', {
+        pairingId: pairing.id,
+        status: pairing.status,
+        photoMode: pairing.photoMode,
+        user1_photoURL: !!pairing.user1_photoURL,
+        user2_photoURL: !!pairing.user2_photoURL,
+        userId: user.id,
+        user1_id: pairing.user1_id,
+        user2_id: pairing.user2_id
+      });
+      
+      // PRIORITY 1: Check if already completed
       if (pairing.status === 'completed') {
+        console.log('DEBUG: Pairing is completed');
         setPairingStatus('completed');
         setWaitingForUser(null);
-      } else if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
-        // Current user has submitted, waiting for partner
+        return;
+      }
+      
+      // PRIORITY 2: Check individual mode - this should complete immediately when anyone submits
+      if (pairing.photoMode === 'individual') {
+        console.log('DEBUG: Individual mode detected');
+        const anyPhotoSubmitted = pairing.user1_photoURL || pairing.user2_photoURL;
+        
+        if (anyPhotoSubmitted) {
+          console.log('DEBUG: Individual mode photo submitted, marking as completed');
+          setPairingStatus('completed');
+          setWaitingForUser(null);
+          return;
+        } else {
+          console.log('DEBUG: Individual mode, no photos yet');
+          setPairingStatus('idle');
+          setWaitingForUser(null);
+          return;
+        }
+      }
+      
+      // PRIORITY 3: Handle together mode or no mode set
+      if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
+        console.log('DEBUG: Together mode - current user submitted, waiting for partner');
         setPairingStatus('waiting');
         setWaitingForUser(pairing.user2_id);
       } else if (pairing.status === 'user2_submitted' && pairing.user2_id === user.id) {
-        // Current user has submitted, waiting for partner
+        console.log('DEBUG: Together mode - current user submitted, waiting for partner');
         setPairingStatus('waiting');
         setWaitingForUser(pairing.user1_id);
+      } else if (pairing.status === 'user1_submitted' && pairing.user2_id === user.id) {
+        console.log('DEBUG: Together mode - partner submitted, current user needs to submit');
+        setPairingStatus('idle');
+        setWaitingForUser(null);
+      } else if (pairing.status === 'user2_submitted' && pairing.user1_id === user.id) {
+        console.log('DEBUG: Together mode - partner submitted, current user needs to submit');
+        setPairingStatus('idle');
+        setWaitingForUser(null);
       } else {
+        console.log('DEBUG: No photos submitted yet or waiting state');
         setPairingStatus('idle');
         setWaitingForUser(null);
       }
@@ -178,7 +234,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   /**
    * Load the current pairing for today
    */
-  const loadCurrentPairing = async (): Promise<void> => {
+  const loadCurrentPairing = useCallback(async (): Promise<void> => {
     if (!user?.id) {
       setPairingError('User not authenticated');
       return;
@@ -192,6 +248,57 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       
       // Fetch the current pairing from Firebase
       const pairing = await firebaseService.getCurrentPairing(user.id);
+      
+      // If no pairing for today, that's perfectly normal - user just doesn't have a partner today
+      if (!pairing) {
+        if (!hasLoggedNoPairing) {
+          console.log('DEBUG: No pairing found for today - user has no partner assigned');
+          setHasLoggedNoPairing(true);
+        }
+        setCurrentPairing(null);
+        setPairingStatus('idle');
+        setPairingError(null); // Clear any previous errors
+        setWaitingForUser(null);
+        setPartnerUsername(null);
+        return;
+      }
+      
+      // Reset the logging flag if we do have a pairing
+      setHasLoggedNoPairing(false);
+      
+      // Validate pairing and partner existence ONLY if we have a pairing
+      // Determine the partner's ID
+      const partnerId = pairing.user1_id === user.id ? pairing.user2_id : pairing.user1_id;
+      
+      // Validate that the partner user actually exists (only for existing pairings)
+      const partnerUser = await firebaseService.getUserById(partnerId);
+      if (!partnerUser) {
+        console.warn('DEBUG: Partner user does not exist:', partnerId, 'for pairing:', pairing.id, '- treating as no pairing');
+        
+        // Instead of throwing an error, gracefully handle invalid pairings
+        // by treating the user as having no partner for today
+        setCurrentPairing(null);
+        setPairingStatus('idle');
+        setPairingError(null); // Don't show error to user
+        setWaitingForUser(null);
+        setPartnerUsername(null);
+        
+        // TODO: Consider cleaning up invalid pairing from Firebase here
+        // await firebaseService.deletePairing(pairing.id);
+        
+        return;
+      }
+      
+      if (!hasLoggedCurrentPairingDebug) {
+        console.log('DEBUG: Valid partner found:', {
+          partnerId,
+          partnerUsername: partnerUser.username || partnerUser.displayName,
+          partnerPhotoURL: !!partnerUser.photoURL
+        });
+        setHasLoggedCurrentPairingDebug(true);
+      }
+      
+      setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
       setCurrentPairing(pairing);
       
       // Check if this is a new pairing date and reset intro flag if needed
@@ -208,26 +315,71 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       
       // Update status based on pairing state
       if (pairing) {
-        // Determine the partner's ID
-        const partnerId = pairing.user1_id === user.id ? pairing.user2_id : pairing.user1_id;
-        
-        // Fetch the partner's profile to get their username
-        const partnerUser = await firebaseService.getUserById(partnerId);
-        if (partnerUser) {
-          setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+        if (!hasLoggedCurrentPairingDebug) {
+          console.log('DEBUG: loadCurrentPairing - status check', {
+            pairingId: pairing.id,
+            status: pairing.status,
+            photoMode: pairing.photoMode,
+            user1_photoURL: !!pairing.user1_photoURL,
+            user2_photoURL: !!pairing.user2_photoURL
+          });
         }
         
+        // PRIORITY 1: Check if already completed
         if (pairing.status === 'completed') {
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - pairing is completed');
+          }
           setPairingStatus('completed');
+        } else if (pairing.photoMode === 'individual') {
+          // PRIORITY 2: Individual mode - complete if anyone has submitted
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - individual mode detected');
+          }
+          const anyPhotoSubmitted = pairing.user1_photoURL || pairing.user2_photoURL;
+          
+          if (anyPhotoSubmitted) {
+            if (!hasLoggedCurrentPairingDebug) {
+              console.log('DEBUG: loadCurrentPairing - individual mode photo submitted, marking as completed');
+            }
+            setPairingStatus('completed');
+            setWaitingForUser(null);
+          } else {
+            if (!hasLoggedCurrentPairingDebug) {
+              console.log('DEBUG: loadCurrentPairing - individual mode, no photos yet');
+            }
+            setPairingStatus('idle');
+          }
         } else if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
-          // Current user has submitted, waiting for partner
+          // PRIORITY 3: Together mode - current user has submitted, waiting for partner
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - together mode, current user submitted');
+          }
           setPairingStatus('waiting');
           setWaitingForUser(pairing.user2_id);
         } else if (pairing.status === 'user2_submitted' && pairing.user2_id === user.id) {
-          // Current user has submitted, waiting for partner
+          // PRIORITY 3: Together mode - current user has submitted, waiting for partner
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - together mode, current user submitted');
+          }
           setPairingStatus('waiting');
           setWaitingForUser(pairing.user1_id);
+        } else if (pairing.status === 'user1_submitted' && pairing.user2_id === user.id) {
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - together mode, partner submitted, current user needs to submit');
+          }
+          setPairingStatus('idle');
+          setWaitingForUser(null);
+        } else if (pairing.status === 'user2_submitted' && pairing.user1_id === user.id) {
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - together mode, partner submitted, current user needs to submit');
+          }
+          setPairingStatus('idle');
+          setWaitingForUser(null);
         } else {
+          if (!hasLoggedCurrentPairingDebug) {
+            console.log('DEBUG: loadCurrentPairing - no photos submitted yet');
+          }
           setPairingStatus('idle');
         }
       } else {
@@ -238,7 +390,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       setPairingError('Failed to load today\'s pairing');
       setPairingStatus('error');
     }
-  };
+  }, [user?.id, hasLoggedNoPairing, hasLoggedCurrentPairingDebug, lastPairingDate]);
   
   /**
    * Load pairing history for the current user
@@ -289,13 +441,37 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       // Refresh the current pairing to get updated status
       await loadCurrentPairing();
       
-      // Update status based on new pairing state
+      // Force a small delay then refresh again to ensure Firebase has propagated changes
+      setTimeout(async () => {
+        await loadCurrentPairing();
+      }, 1000);
+      
+      // For individual mode, the status should be completed immediately
+      // For together mode, check if both users have submitted
       const refreshedPairing = await firebaseService.getPairingById(currentPairing.id);
       if (refreshedPairing) {
-        if (refreshedPairing.status === 'completed') {
+        console.log('DEBUG: Refreshed pairing after photo submission', {
+          status: refreshedPairing.status,
+          photoMode: refreshedPairing.photoMode,
+          user1_photoURL: !!refreshedPairing.user1_photoURL,
+          user2_photoURL: !!refreshedPairing.user2_photoURL
+        });
+        
+        // Update the current pairing state directly
+        setCurrentPairing(refreshedPairing);
+        
+        // Update status will be handled by the real-time listener
+        // But let's ensure the status is set correctly based on mode
+        if (refreshedPairing.photoMode === 'individual') {
+          // Individual mode should be completed immediately
+          console.log('DEBUG: Individual mode photo submitted, should be completed');
           setPairingStatus('completed');
+          setWaitingForUser(null);
+        } else if (refreshedPairing.status === 'completed') {
+          setPairingStatus('completed');
+          setWaitingForUser(null);
         } else {
-          // Determine if we're waiting for the partner
+          // Together mode: determine if we're waiting for the partner
           const isUser1 = refreshedPairing.user1_id === user.id;
           const isUser2 = refreshedPairing.user2_id === user.id;
           const partnerId = isUser1 ? refreshedPairing.user2_id : refreshedPairing.user1_id;

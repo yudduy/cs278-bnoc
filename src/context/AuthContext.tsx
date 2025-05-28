@@ -10,6 +10,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { useFirebase } from '../providers/FirebaseProvider';
 import { User } from '../types';
 import * as authService from '../services/authService';
+import * as userService from '../services/userService';
 import logger from '../utils/logger';
 
 // Context type definitions
@@ -28,6 +29,7 @@ interface AuthContextType {
   uploadProfilePhoto: (imageUri: string) => Promise<string>;
   completeOnboarding: () => void;
   clearError: () => void;
+  refreshUserData: () => Promise<void>;
 }
 
 // Create context
@@ -46,6 +48,7 @@ const AuthContext = createContext<AuthContextType>({
   uploadProfilePhoto: async () => '',
   completeOnboarding: () => {},
   clearError: () => {},
+  refreshUserData: async () => {},
 });
 
 // Provider props
@@ -244,6 +247,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
     }
   };
   
+  // Refresh user data from Firebase (e.g., after adding friends)
+  const refreshUserData = async () => {
+    if (!user) {
+      return;
+    }
+    
+    try {
+      logger.debug('Refreshing user data from Firebase:', user.id);
+      const refreshedUser = await userService.getUserById(user.id);
+      
+      if (refreshedUser) {
+        setUser(refreshedUser);
+        logger.info('User data refreshed successfully, connections:', refreshedUser.connections?.length || 0);
+      }
+    } catch (err: any) {
+      logger.error('Error refreshing user data:', err);
+      // Don't throw here - it's a background refresh
+    }
+  };
+  
   // Upload profile photo method
   const uploadProfilePhoto = async (imageUri: string): Promise<string> => {
     if (!user) {
@@ -304,6 +327,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
     uploadProfilePhoto,
     completeOnboarding,
     clearError,
+    refreshUserData,
   };
   
   return (

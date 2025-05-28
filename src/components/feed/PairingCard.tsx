@@ -347,7 +347,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginRight: 8,
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
   timeText: {

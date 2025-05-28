@@ -4,7 +4,7 @@
     "slug": "bnoc-react",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": null,
+    "icon": "./assets/icons/app-icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
       "backgroundColor": "#1A1A1A"
@@ -17,19 +17,21 @@
       "bundleIdentifier": "com.bnoc.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Daily Meetup Selfie to access your camera to take selfies with friends.",
-        "NSMicrophoneUsageDescription": "Allow Daily Meetup Selfie to access your microphone for video calls."
+        "NSMicrophoneUsageDescription": "Allow Daily Meetup Selfie to access your microphone for video calls.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/icons/app-icon.png",
         "backgroundColor": "#1A1A1A"
       },
       "package": "com.bnoc.app",
       "permissions": [
-        "CAMERA",
-        "RECORD_AUDIO",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {},
@@ -47,20 +49,12 @@
         }
       ],
       [
-        "react-native-vision-camera",
-        {
-          "cameraPermissionText": "Allow Daily Meetup Selfie to access your camera to take dual-camera selfies.",
-          "enableMicrophonePermission": true,
-          "microphonePermissionText": "Allow Daily Meetup Selfie to access your microphone for video calls."
-        }
-      ],
-      [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
           "color": "#990000",
           "sounds": [
-            "./assets/sounds/notification-sound.wav"
+            "./assets/notification-sound.wav"
           ]
         }
       ],
@@ -68,6 +62,17 @@
       "expo-web-browser"
     ],
     "scheme": "dailymeetup",
-    "primaryColor": "#990000"
+    "primaryColor": "#990000",
+    "extra": {
+      "eas": {
+        "projectId": "fe2e5eb2-c438-44c4-874f-0066d2a2643a"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/fe2e5eb2-c438-44c4-874f-0066d2a2643a"
+    }
   }
 }

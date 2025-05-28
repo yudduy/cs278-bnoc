@@ -145,10 +145,21 @@ export default function CurrentPairingScreen() {
   
   const handleOpenChat = () => {
     if (currentPairing) {
-      (navigation as any).navigate('Chat', {
+      // Use the pairing's chatId, or fallback to pairingId if chatId is missing
+      const chatId = currentPairing.chatId || currentPairing.id;
+      
+      console.log('DEBUG: Opening chat', {
         pairingId: currentPairing.id,
+        chatId: chatId,
         partnerId: partner?.id,
         partnerName: partner?.displayName || partner?.username
+      });
+      
+      (navigation as any).navigate('Chat', {
+        pairingId: currentPairing.id,
+        chatId: chatId, // Add the missing chatId parameter
+        partnerId: partner?.id,
+        partnerName: partner?.displayName || partner?.username || 'Your Partner'
       });
     }
   };
@@ -168,7 +179,11 @@ export default function CurrentPairingScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No active pairing for today.</Text>
+          <Ionicons name="calendar-outline" size={64} color={COLORS.textSecondary} />
+          <Text style={styles.emptyTitle}>You're all set for today!</Text>
+          <Text style={styles.emptyText}>
+            No pairing assigned today. Enjoy browsing your friends' posts in the feed!
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -188,38 +203,84 @@ export default function CurrentPairingScreen() {
         
         {/* Photo Display */}
         <View style={styles.photoContainer}>
-          {bothPhotosSubmitted ? (
-            // Show combined photo when both submitted
-            <View style={styles.combinedPhotoContainer}>
-              <Image 
-                source={{ uri: userPhotoURL }}
-                style={styles.combinedPhoto}
-                resizeMode="cover"
-              />
-              <Image 
-                source={{ uri: partnerPhotoURL }}
-                style={styles.combinedPhoto}
-                resizeMode="cover"
-              />
-            </View>
-          ) : userPhotoURL ? (
-            // Show user's photo when only user submitted
+          {pairingStatus === 'completed' ? (
+            // Check photoMode to determine display style
+            currentPairing?.photoMode === 'individual' ? (
+              // Individual mode: Show single photo
+              <View style={styles.singlePhotoContainer}>
+                <Image 
+                  source={{ uri: (userPhotoURL || partnerPhotoURL)! }}
+                  style={styles.singlePhoto}
+                  resizeMode="cover"
+                />
+                <Text style={styles.completedText}>
+                  Pairing completed! 🎉
+                </Text>
+              </View>
+            ) : (
+              // Together mode: Show combined photos when both submitted
+              bothPhotosSubmitted ? (
+                <View style={styles.combinedPhotoContainer}>
+                  <Image 
+                    source={{ uri: userPhotoURL }}
+                    style={styles.combinedPhoto}
+                    resizeMode="cover"
+                  />
+                  <Image 
+                    source={{ uri: partnerPhotoURL }}
+                    style={styles.combinedPhoto}
+                    resizeMode="cover"
+                  />
+                </View>
+              ) : (userPhotoURL || partnerPhotoURL) ? (
+                // One photo submitted in together mode
+                <View style={styles.singlePhotoContainer}>
+                  <Image 
+                    source={{ uri: (userPhotoURL || partnerPhotoURL)! }}
+                    style={styles.singlePhoto}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.waitingText}>
+                    Waiting for {partner?.displayName || 'partner'}...
+                  </Text>
+                </View>
+              ) : (
+                // No photos in together mode
+                <View style={styles.placeholderContainer}>
+                  <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
+                  <Text style={styles.placeholderText}>
+                    Take your together selfie to get started
+                  </Text>
+                </View>
+              )
+            )
+          ) : (userPhotoURL || partnerPhotoURL) ? (
+            // Photos submitted but not completed yet
             <View style={styles.singlePhotoContainer}>
               <Image 
-                source={{ uri: userPhotoURL }}
+                source={{ uri: (userPhotoURL || partnerPhotoURL)! }}
                 style={styles.singlePhoto}
                 resizeMode="cover"
               />
-              <Text style={styles.waitingText}>
-                Waiting for {partner?.displayName || 'partner'}...
-              </Text>
+              {currentPairing?.photoMode === 'individual' ? (
+                <Text style={styles.completedText}>
+                  Pairing completed! 🎉
+                </Text>
+              ) : (
+                <Text style={styles.waitingText}>
+                  Waiting for {partner?.displayName || 'partner'}...
+                </Text>
+              )}
             </View>
           ) : (
             // Show placeholder when no photos
             <View style={styles.placeholderContainer}>
               <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
               <Text style={styles.placeholderText}>
-                Take your selfie to get started
+                {photoModeStatus.hasChoice && currentPairing?.photoMode 
+                  ? `Take your ${currentPairing.photoMode} selfie to get started`
+                  : 'Take your selfie to get started'
+                }
               </Text>
             </View>
           )}
@@ -243,7 +304,7 @@ export default function CurrentPairingScreen() {
         
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
-          {!userPhotoURL && (
+          {(!userPhotoURL && !partnerPhotoURL) && (
             <TouchableOpacity style={styles.actionButton} onPress={handleTakePhoto}>
               <Ionicons name="camera" size={28} color={COLORS.primary} />
             </TouchableOpacity>
@@ -297,6 +358,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  emptyTitle: {
+    fontFamily: FONTS.bold,
+    fontSize: 24,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
   emptyText: {
     color: COLORS.text,
     fontFamily: FONTS.regular,
@@ -339,6 +407,12 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     fontSize: 16,
     color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  completedText: {
+    fontFamily: FONTS.regular,
+    fontSize: 16,
+    color: COLORS.primary,
     textAlign: 'center',
   },
   placeholderContainer: {

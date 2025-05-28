@@ -3,6 +3,7 @@
  * 
  * User profile screen with Instagram-inspired layout and black and white theme.
  * Shows user stats, profile info, and recent pairings.
+ * Edit profile functionality removed - profile is set during onboarding only.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -54,15 +55,6 @@ const ProfileScreen: React.FC = () => {
       NavigationService.navigate('Settings');
     } catch (error) {
       console.error('Error navigating to settings:', error);
-    }
-  };
-  
-  // Navigate to edit profile
-  const handleEditProfilePress = () => {
-    try {
-      NavigationService.navigate('EditProfile');
-    } catch (error) {
-      console.error('Error navigating to edit profile:', error);
     }
   };
   
@@ -315,16 +307,6 @@ const ProfileScreen: React.FC = () => {
           {profileUser?.username && (
             <Text style={styles.username}>@{profileUser.username}</Text>
           )}
-        </View>
-        
-        {/* Edit Profile Button */}
-        <View style={styles.actionsSection}>
-          <TouchableOpacity 
-            style={styles.editProfileButton}
-            onPress={handleEditProfilePress}
-          >
-            <Text style={styles.editProfileText}>Edit Profile</Text>
-          </TouchableOpacity>
         </View>
         
         {/* Recent Pairings Section */}

@@ -30,7 +30,7 @@ export default function CameraScreen() {
   const navigation = useNavigation<StackNavigationProp<MainStackParamList>>(); 
   const route = useRoute<CameraScreenRouteProp>();
   
-  const { pairingId, userId: routeUserId, submissionType } = route.params || {};
+  const { pairingId, userId: routeUserId, submissionType, photoMode } = route.params || {};
 
   const { user: authUser } = useAuth(); 
   const currentUserId = routeUserId || authUser?.id;
@@ -81,6 +81,12 @@ export default function CameraScreen() {
       setErrorMessage(null);
 
       try {
+        // Set photo mode in pairing if provided and not already set
+        if (photoMode && currentUserId) {
+          console.log('Setting photo mode:', photoMode);
+          await firebaseService.updatePairingPhotoMode(pairingId, photoMode, currentUserId);
+        }
+        
         console.log('Uploading image to Firebase Storage...');
         // Use our enhanced uploadPairingPhoto function
         const downloadURL = await uploadPairingPhoto(
@@ -98,8 +104,7 @@ export default function CameraScreen() {
         
         Alert.alert('Success', 'Photo uploaded and pairing updated!');
         navigation.navigate('TabNavigator', { 
-          screen: 'Feed', 
-          params: { scrollToPairingId: pairingId, refresh: true } 
+          screen: 'Today'
         });
 
       } catch (error: any) {

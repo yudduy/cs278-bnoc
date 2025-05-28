@@ -10,6 +10,10 @@ import * as feedService from './feedService';
 import * as notificationService from './notificationService';
 import logger from '../utils/logger';
 
+// Session-based logging flags to prevent spam
+let hasLoggedCurrentPairingDebug = false;
+let hasLoggedNoPairingToday = false;
+
 /**
  * Get current pairing for a user
  */
@@ -24,7 +28,10 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    logger.debug(`Getting current pairing for user ${userId} after ${today.toISOString()}`);
+    if (!hasLoggedCurrentPairingDebug) {
+      logger.debug(`Getting current pairing for user ${userId} after ${today.toISOString()}`);
+      hasLoggedCurrentPairingDebug = true;
+    }
     
     // Query pairings for today where the user is included in the users array
     const pairingsQuery = query(
@@ -39,9 +46,15 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     
     // If no pairings found, return null
     if (snapshot.empty) {
-      logger.info(`No active pairing found for user ${userId}`);
+      if (!hasLoggedNoPairingToday) {
+        logger.info(`No active pairing found for user ${userId}`);
+        hasLoggedNoPairingToday = true;
+      }
       return null;
     }
+    
+    // Reset the flag since we found a pairing
+    hasLoggedNoPairingToday = false;
     
     // Get the first (and should be only) pairing
     const pairingDoc = snapshot.docs[0];
@@ -49,7 +62,7 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
     
     // Validate that the pairing data has the required fields
     if (!pairingData || !pairingData.users || !Array.isArray(pairingData.users)) {
-      logger.error(`Invalid pairing data for pairing ${pairingDoc.id}:${JSON.stringify(pairingData)}`);
+      logger.error(`Invalid pairing data for pairing ${pairingDoc.id}: ${JSON.stringify(pairingData)}`);
       return null;
     }
     
@@ -320,23 +333,37 @@ export const updatePairingWithPhoto = async (
       throw new Error(`User ${userId} is not part of pairing ${pairingId}.`);
     }
 
-    // Check if both users have now submitted
-    const user1Submitted = 
-      (pairingData.user1_id === userId) || 
-      (!!pairingData.user1_photoURL && pairingData.user1_submittedAt !== null);
-      
-    const user2Submitted = 
-      (pairingData.user2_id === userId) || 
-      (!!pairingData.user2_photoURL && pairingData.user2_submittedAt !== null);
-      
-    // If this submission completes the pairing
-    if (user1Submitted && user2Submitted) {
-      logger.info(`Both users have submitted photos for pairing ${pairingId}. Marking as completed.`);
+    // Check photo mode to determine completion logic
+    const photoMode = pairingData.photoMode;
+    
+    if (photoMode === 'individual') {
+      // INDIVIDUAL MODE: Complete immediately when first user submits
+      logger.info(`Individual mode: User ${userId} submitted photo for pairing ${pairingId}. Marking as completed.`);
       updateData.status = 'completed';
       updateData.completedAt = Timestamp.now();
+      
+      // For individual mode, DO NOT duplicate photos - just set the user's photo
+      // The display logic will handle showing the single photo correctly
     } else {
-      updateData.status = newStatus;
-      logger.info(`User ${userId} submitted photo for pairing ${pairingId}. Status: ${newStatus}`);
+      // TOGETHER MODE or NO MODE SET: Require both users to submit
+      // Check if both users have now submitted
+      const user1Submitted = 
+        (pairingData.user1_id === userId) || 
+        (!!pairingData.user1_photoURL && pairingData.user1_submittedAt !== null);
+        
+      const user2Submitted = 
+        (pairingData.user2_id === userId) || 
+        (!!pairingData.user2_photoURL && pairingData.user2_submittedAt !== null);
+        
+      // If this submission completes the pairing
+      if (user1Submitted && user2Submitted) {
+        logger.info(`Together mode: Both users have submitted photos for pairing ${pairingId}. Marking as completed.`);
+        updateData.status = 'completed';
+        updateData.completedAt = Timestamp.now();
+      } else {
+        updateData.status = newStatus;
+        logger.info(`Together mode: User ${userId} submitted photo for pairing ${pairingId}. Status: ${newStatus}`);
+      }
     }
 
     await updateDoc(pairingRef, updateData);
@@ -392,7 +419,7 @@ export const updatePairingWithPhoto = async (
         // Don't throw here - the pairing was successfully updated, so we just log the error
       }
     } else if (updateData.status === 'user1_submitted' || updateData.status === 'user2_submitted') {
-      // If one user has submitted, notify the other user that it's their turn
+      // If one user has submitted in together mode, notify the other user that it's their turn
       const otherUserId = userId === pairingData.user1_id ? pairingData.user2_id : pairingData.user1_id;
       const currentUser = await getUserById(userId);
       

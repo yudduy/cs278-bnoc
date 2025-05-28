@@ -33,7 +33,7 @@ const DEFAULT_PROFILE_IMAGE = 'https://firebasestorage.googleapis.com/v0/b/stone
 
 const ProfileSetupScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const { user, updateUserProfile, uploadProfilePhoto, completeOnboarding } = useAuth();
   
   // State for profile fields
   const [displayName, setDisplayName] = useState('');
@@ -123,34 +123,39 @@ const ProfileSetupScreen: React.FC = () => {
       return;
     }
     
-    // Upload profile image if user is authenticated
-    if (user?.id && profileImage) {
-      try {
-        setIsUploading(true);
-        
-        // Upload profile image to Firebase Storage
-        const downloadURL = await uploadUserProfileImage(
-          profileImage,
-          user.id,
-          (progress) => console.log(`Upload progress: ${progress}%`)
-        );
-        
-        // Store the profile data in context or temporary storage for completion
-        // In a real implementation, this would save to Firestore and update the AuthContext
-        console.log('Profile image uploaded:', downloadURL);
-        
-        // Navigate to completion screen
-        navigation.navigate('Completion' as never);
-      } catch (error) {
-        console.error('Error uploading profile image:', error);
-        Alert.alert('Upload Error', 'Failed to upload profile image. Please try again.');
-      } finally {
-        setIsUploading(false);
-      }
-    } else {
-      // For development/testing purposes when user might not be authenticated yet
-      console.log('No user ID available. In production, would require authentication.');
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated. Please try again.');
+      return;
+    }
+    
+    try {
+      setIsUploading(true);
+      
+      // Upload profile image to Firebase Storage
+      console.log('Uploading profile image...');
+      const photoURL = await uploadProfilePhoto(profileImage);
+      console.log('Profile image uploaded successfully:', photoURL);
+      
+      // Update user profile with display name, username, and photo URL
+      console.log('Updating user profile...');
+      await updateUserProfile({
+        displayName: displayName.trim(),
+        username: username.trim(),
+        photoURL: photoURL
+      });
+      console.log('User profile updated successfully');
+      
+      // Mark onboarding as complete
+      completeOnboarding();
+      
+      // Navigate to completion screen
       navigation.navigate('Completion' as never);
+      
+    } catch (error) {
+      console.error('Error completing profile setup:', error);
+      Alert.alert('Setup Error', 'Failed to complete profile setup. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
   
@@ -297,7 +302,7 @@ const ProfileSetupScreen: React.FC = () => {
             <View style={onboardingStyles.infoContainer}>
               <Ionicons name="information-circle-outline" size={24} color={COLORS.textSecondary} />
               <Text style={onboardingStyles.infoText}>
-                You can change your profile information later in settings.
+                Choose carefully - your profile picture will be permanent once set.
               </Text>
             </View>
             

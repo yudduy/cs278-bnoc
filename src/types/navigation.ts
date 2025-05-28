@@ -6,6 +6,8 @@
 
 import { NavigatorScreenParams } from '@react-navigation/native'; // Import NavigatorScreenParams
 
+export type PhotoMode = 'individual' | 'together';
+
 export type MainStackParamList = {
   // MODIFIED: Define params for TabNavigator to accept screen and params for MainTabParamList
   TabNavigator: NavigatorScreenParams<MainTabParamList>; 
@@ -13,6 +15,7 @@ export type MainStackParamList = {
     pairingId?: string; 
     userId?: string; 
     submissionType?: 'pairing' | 'profile' | 'other'; // Added submissionType
+    photoMode?: PhotoMode; // Added photoMode
   };
   PhotoPreview: {
     frontImage: string;
@@ -57,6 +60,7 @@ export type MainTabParamList = {
     scrollToPairingId?: string;
     refresh?: boolean; // Added refresh param
   };
+  Today: undefined;
   Camera: { 
     pairingId?: string;
     userId?: string; 

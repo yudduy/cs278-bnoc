@@ -171,18 +171,20 @@ const FeedScreen: React.FC = () => {
     }
   }, [user?.id]); // Dependency on user.id
 
-  // FIXED: Removed animation initialization that was causing conflicts
-  // Load initial feed data - animation removed to prevent bounce conflicts
-  
   // Data loading and user authentication effect
   useEffect(() => {
     if (user?.id) {
       loadFeed(true);
-      if (!currentPairing) {
-        loadCurrentPairing();
-      }
     } 
-  }, [user, loadFeed, currentPairing, loadCurrentPairing]);
+  }, [user?.id, loadFeed, user?.connections?.length]); // Removed loadCurrentPairing dependency
+  
+  // Separate effect for loading current pairing only once
+  useEffect(() => {
+    if (user?.id && currentPairing === null) {
+      // Only load current pairing if we don't have one yet
+      loadCurrentPairing();
+    }
+  }, [user?.id]); // Only depend on user.id, not loadCurrentPairing
   
   // Scroll to specific pairing if requested
   useEffect(() => {
@@ -310,7 +312,7 @@ const FeedScreen: React.FC = () => {
     
     // Skip rendering if we don't have the user data yet
     if (!user1 || !user2) {
-      console.log(`Missing user data for pairing ${item.id}`);
+      // Silently skip items with missing user data instead of logging repeatedly
       return null;
     }
     

@@ -10,6 +10,9 @@ export const COLORS = {
   primaryLight: '#F5F5F5',
   primaryDark: '#E0E0E0',
   
+  // Secondary color
+  secondary: '#AAAAAA',
+  
   // UI background colors - primarily black
   background: '#000000', // Black background
   backgroundDark: '#000000',
@@ -30,6 +33,7 @@ export const COLORS = {
   warningDark: '#EEEEEE',
   error: '#FFFFFF',
   errorDark: '#EEEEEE',
+  errorLight: '#FFCCCC',
   info: '#FFFFFF',
   infoDark: '#EEEEEE',
   

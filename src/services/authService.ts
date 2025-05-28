@@ -85,12 +85,30 @@ const createUserProfile = async (
     pushToken: undefined
   };
   
-  await setDoc(userRef, userData);
-  
-  return {
-    id: firebaseUser.uid,
-    ...userData
+  // Create the document data with server timestamps
+  const firestoreData = {
+    ...userData,
+    createdAt: serverTimestamp(),
+    lastActive: serverTimestamp(),
+    lastUpdated: serverTimestamp(),
   };
+  
+  try {
+    await setDoc(userRef, firestoreData);
+    logger.info('Firestore profile created successfully for user:', firebaseUser.uid);
+    
+    // Return the user with the actual timestamp values
+    return {
+      id: firebaseUser.uid,
+      ...userData,
+      createdAt: Timestamp.now(),
+      lastActive: Timestamp.now(),
+      lastUpdated: Timestamp.now(),
+    };
+  } catch (error) {
+    logger.error('Error creating Firestore profile:', error);
+    throw new Error('Failed to create user profile. Please try again.');
+  }
 };
 
 /**
@@ -184,11 +202,46 @@ export const signUp = async (
 };
 
 /**
- * Sign in with Firebase Auth
+ * Find user by username and return their email
  */
-export const signIn = async (email: string, password: string): Promise<User> => {
+export const getUserEmailByUsername = async (username: string): Promise<string | null> => {
   try {
-    // Sign in with Firebase Auth
+    const usernameQuery = query(
+      collection(db, 'users'),
+      where('username', '==', username)
+    );
+    
+    const snapshot = await getDocs(usernameQuery);
+    
+    if (!snapshot.empty) {
+      const userData = snapshot.docs[0].data();
+      return userData.email;
+    }
+    
+    return null;
+  } catch (error) {
+    logger.error('Error finding user by username:', error);
+    return null;
+  }
+};
+
+/**
+ * Sign in with Firebase Auth - supports both email and username
+ */
+export const signIn = async (emailOrUsername: string, password: string): Promise<User> => {
+  try {
+    let email = emailOrUsername;
+    
+    // Check if input is username (doesn't contain @) and convert to email
+    if (!emailOrUsername.includes('@')) {
+      const foundEmail = await getUserEmailByUsername(emailOrUsername);
+      if (!foundEmail) {
+        throw new Error('Username not found. Please check your username or use your email address.');
+      }
+      email = foundEmail;
+    }
+    
+    // Sign in with Firebase Auth using email
     const userCredential: UserCredential = await signInWithEmailAndPassword(
       auth, 
       email, 
@@ -364,21 +417,40 @@ export const isUsernameAvailable = async (username: string): Promise<boolean> =>
 };
 
 /**
- * Check email availability
+ * Check email availability - checks both Firebase Auth and Firestore
  */
 export const isEmailAvailable = async (email: string): Promise<boolean> => {
   try {
+    // First check Firestore
     const emailQuery = query(
       collection(db, 'users'),
       where('email', '==', email.toLowerCase())
     );
     
     const snapshot = await getDocs(emailQuery);
-    return snapshot.empty;
+    if (!snapshot.empty) {
+      return false; // Email exists in Firestore
+    }
+    
+    // Also check Firebase Auth by attempting to fetch sign-in methods
+    // This is a more reliable way to check if email exists in Firebase Auth
+    try {
+      const { fetchSignInMethodsForEmail } = await import('firebase/auth');
+      const signInMethods = await fetchSignInMethodsForEmail(auth, email.toLowerCase());
+      return signInMethods.length === 0; // Available if no sign-in methods exist
+    } catch (authError: any) {
+      // If the error is about user not found, email is available
+      if (authError.code === 'auth/user-not-found') {
+        return true;
+      }
+      // For other errors, assume email might be taken to be safe
+      logger.warn('Error checking Firebase Auth for email:', authError);
+      return false;
+    }
     
   } catch (error) {
     logger.error('Email availability check error:', error);
-    return false;
+    return false; // Assume not available on error to be safe
   }
 };
 

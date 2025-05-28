@@ -63,9 +63,17 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       return;
     }
     
+    if (!pairingId || !chatId) {
+      console.error('ChatContext: Missing pairingId or chatId', { pairingId, chatId });
+      setChatError('Invalid chat parameters');
+      return;
+    }
+    
     try {
       setIsLoadingMessages(true);
       setChatError(null);
+      
+      console.log('DEBUG: Loading messages for chat', { pairingId, chatId, userId: user.id });
       
       // Clean up previous listener if exists
       if (unsubscribeListener) {
@@ -80,13 +88,34 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       const messagesQuery = query(messagesRef, orderBy('createdAt', 'asc'));
       
       const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-        const newMessages: ChatMessage[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        } as ChatMessage));
-        
-        setMessages(newMessages);
-        setIsLoadingMessages(false);
+        try {
+          const newMessages: ChatMessage[] = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            
+            // Validate message data to prevent undefined errors
+            if (!data || typeof data.text !== 'string' || !data.senderId) {
+              console.warn('ChatContext: Invalid message data', { docId: doc.id, data });
+              return null;
+            }
+            
+            return {
+              id: doc.id,
+              chatRoomId: data.chatRoomId || chatId,
+              senderId: data.senderId,
+              text: data.text,
+              createdAt: data.createdAt || new Date(),
+              readBy: Array.isArray(data.readBy) ? data.readBy : []
+            } as ChatMessage;
+          }).filter(msg => msg !== null) as ChatMessage[]; // Filter out null messages
+          
+          console.log(`DEBUG: Loaded ${newMessages.length} messages for chat ${chatId}`);
+          setMessages(newMessages);
+          setIsLoadingMessages(false);
+        } catch (messageError) {
+          console.error('Error processing chat messages:', messageError);
+          setChatError('Error processing messages');
+          setIsLoadingMessages(false);
+        }
       }, (error) => {
         console.error('Error in chat listener:', error);
         setChatError('Failed to load chat messages');

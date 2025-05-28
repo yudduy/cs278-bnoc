@@ -41,7 +41,7 @@ const FindFriendsScreen: React.FC = () => {
   const [connections, setConnections] = useState<string[]>([]);
   
   // Hooks
-  const { user } = useAuth();
+  const { user, refreshUserData } = useAuth();
   const navigation = useNavigation();
   
   // Load all users on component mount
@@ -135,6 +135,9 @@ const FindFriendsScreen: React.FC = () => {
       
       // Update local connections list
       setConnections(prev => [...prev, targetUserId]);
+      
+      // Refresh auth context user data to trigger feed updates
+      await refreshUserData();
       
       // Show success message
       Alert.alert('Success', 'Friend added successfully! You are now connected with this user.');
