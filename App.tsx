@@ -69,9 +69,20 @@ const App: React.FC = () => {
 
 // Content component that determines which navigator to show based on auth state
 const AppContent: React.FC = () => {
-  const { isAuthenticated, isLoading, isNewUser } = useAuth();
+  const { isAuthenticated, isLoading, isNewUser, user } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  
+  // Debug logging for auth state changes
+  useEffect(() => {
+    console.log('🔄 AppContent: Auth state changed:', {
+      isAuthenticated,
+      isLoading,
+      isNewUser,
+      hasUser: !!user,
+      userId: user?.id
+    });
+  }, [isAuthenticated, isLoading, isNewUser, user]);
   
   // Verify Firebase initialization
   useEffect(() => {

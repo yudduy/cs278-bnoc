@@ -22,7 +22,7 @@ interface AuthContextType {
   error: string | null;
   isNewUser: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, username: string, displayName?: string) => Promise<void>;
+  signUp: (email: string, password: string, username: string, displayName?: string, profileImageUri?: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateUserProfile: (data: Partial<User>) => Promise<void>;
@@ -82,9 +82,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
     
     logger.debug('AuthContext: Auth instance is available, setting up listener');
     
-    try {
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+    try {      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
         try {
+          logger.debug('AuthContext: onAuthStateChanged triggered, firebaseUser:', firebaseUser?.uid || 'null');
           setIsLoading(true);
           setFirebaseUser(firebaseUser);
           
@@ -92,13 +92,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
             logger.info('Firebase user authenticated:', firebaseUser.uid);
             
             // Get user profile from Firestore
+            logger.debug('AuthContext: Fetching user profile from Firestore');
             const userProfile = await authService.getUserProfile(firebaseUser.uid);
             
             if (userProfile) {
+              logger.info('AuthContext: User profile loaded successfully:', userProfile.id);
               setUser(userProfile);
               setIsAuthenticated(true);
               setIsNewUser(false); // Existing user
-              logger.info('User profile loaded:', userProfile.id);
+              logger.info('AuthContext: Authentication state updated - isAuthenticated: true');
             } else {
               // This shouldn't happen with proper signup flow
               logger.warn('No user profile found for authenticated user');
@@ -118,6 +120,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
           setUser(null);
           setIsAuthenticated(false);
         } finally {
+          logger.debug('AuthContext: Setting isLoading to false');
           setIsLoading(false);
         }
       });
@@ -130,40 +133,58 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
       setIsLoading(false);
     }
   }, [auth]); // Add auth as dependency
-  
   // Sign in method
   const signIn = async (email: string, password: string) => {
     try {
-      setIsLoading(true);
       setError(null);
       
       logger.debug('Attempting to sign in user:', email);
       const userData = await authService.signIn(email, password);
       
-      // State will be updated by onAuthStateChanged listener
-      logger.info('Sign in successful:', userData.id);
+      // Force check auth state after successful sign in
+      logger.info('Sign in successful, checking current auth state:', userData.id);
+      
+      // Give Firebase a moment to update, then check current user
+      setTimeout(async () => {
+        try {
+          const currentUser = auth.currentUser;
+          logger.debug('Current Firebase user after sign-in:', currentUser?.uid);
+          
+          if (currentUser) {
+            const userProfile = await authService.getUserProfile(currentUser.uid);
+            if (userProfile) {
+              logger.info('Manually updating auth state after sign-in');
+              setUser(userProfile);
+              setIsAuthenticated(true);
+              setIsNewUser(false);
+              setIsLoading(false);
+            }
+          }
+        } catch (err) {
+          logger.error('Error in manual auth state check:', err);
+        }
+      }, 100);
       
     } catch (err: any) {
       logger.error('Sign in error:', err);
       setError(err.message || 'Failed to sign in. Please try again.');
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Only set loading false on error
     }
   };
-  
-  // Sign up method
+    // Sign up method
   const signUp = async (
     email: string, 
     password: string, 
     username: string, 
-    displayName?: string
+    displayName?: string,
+    profileImageUri?: string
   ) => {
     try {
       setIsLoading(true);
       setError(null);
       
       logger.debug('Attempting to sign up user:', email, username);
-      const userData = await authService.signUp(email, password, username, displayName);
+      const userData = await authService.signUp(email, password, username, displayName, profileImageUri);
       
       // Mark as new user for onboarding
       setIsNewUser(true);

@@ -16,10 +16,13 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { COLORS, FONTS, BORDER_RADIUS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { useAuth } from '../../context/AuthContext';
@@ -33,17 +36,18 @@ type FormErrors = {
   password?: string;
   confirmPassword?: string;
   username?: string;
+  profileImage?: string;
   general?: string;
 };
 
 const AuthScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  
-  // Form state
+    // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   const [mode, setMode] = useState<FormMode>('signIn');
   const [errors, setErrors] = useState<FormErrors>({});
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
@@ -57,8 +61,7 @@ const AuthScreen: React.FC = () => {
   
   // Toast notifications
   const { showError, showSuccess } = useToast();
-  
-  // Clear form errors when switching modes
+    // Clear form errors when switching modes
   useEffect(() => {
     setErrors({});
     clearError();
@@ -67,9 +70,101 @@ const AuthScreen: React.FC = () => {
     setPassword('');
     setConfirmPassword('');
     setUsername('');
+    setProfileImage(null);
     setIsUsernameAvailable(null);
     setIsEmailAvailable(null);
   }, [mode, clearError]);
+  
+  /**
+   * Handle profile image selection from library
+   */
+  const handleImageSelect = async () => {
+    try {
+      // Request permissions
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please allow access to your photo library to select a profile picture.');
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      // Check if selection was successful
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setProfileImage(result.assets[0].uri);
+        // Clear profile image error if it exists
+        if (errors.profileImage) {
+          setErrors(prev => ({ ...prev, profileImage: undefined }));
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+  
+  /**
+   * Handle taking photo with camera
+   */
+  const handleTakePhoto = async () => {
+    try {
+      // Request camera permissions
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please allow access to your camera to take a profile picture.');
+        return;
+      }
+
+      // Launch camera
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      // Check if photo was taken
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setProfileImage(result.assets[0].uri);
+        // Clear profile image error if it exists
+        if (errors.profileImage) {
+          setErrors(prev => ({ ...prev, profileImage: undefined }));
+        }
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
+    }
+  };
+  
+  /**
+   * Show profile image selection options
+   */
+  const showImageOptions = () => {
+    Alert.alert(
+      'Profile Picture',
+      'Choose a profile picture',
+      [
+        {
+          text: 'Take Photo',
+          onPress: handleTakePhoto,
+        },
+        {
+          text: 'Choose from Library',
+          onPress: handleImageSelect,
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
   
   /**
    * Validate Stanford email
@@ -164,8 +259,7 @@ const AuthScreen: React.FC = () => {
     } else if (password.length < 6) {
       formErrors.password = 'Password must be at least 6 characters';
     }
-    
-    // Sign up specific validations
+      // Sign up specific validations
     if (mode === 'signUp') {
       if (password !== confirmPassword) {
         formErrors.confirmPassword = 'Passwords do not match';
@@ -179,6 +273,11 @@ const AuthScreen: React.FC = () => {
         formErrors.username = 'Username can only contain letters, numbers, and underscores';
       } else if (isUsernameAvailable === false) {
         formErrors.username = 'Username is already taken';
+      }
+      
+      // Profile image validation for sign-up
+      if (!profileImage) {
+        formErrors.profileImage = 'Profile picture is required';
       }
     }
     
@@ -217,8 +316,7 @@ const AuthScreen: React.FC = () => {
           }));
           return; // Don't show toast for validation errors
         }
-        
-        await signUp(email.toLowerCase().trim(), password, username);
+          await signUp(email.toLowerCase().trim(), password, username, undefined, profileImage || undefined);
         showSuccess('Account created successfully! Welcome to BNOC!');
         // Note: Navigation to onboarding will be handled by the auth context
         // and the main App.tsx component will redirect new users to onboarding
@@ -484,6 +582,45 @@ const AuthScreen: React.FC = () => {
               </View>
             )}
             
+            {/* Profile Picture Input - Only for Sign Up */}
+            {mode === 'signUp' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Profile Picture *</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.profileImageContainer,
+                    errors.profileImage ? styles.inputError : null
+                  ]}
+                  onPress={showImageOptions}
+                  disabled={isLoading}
+                >
+                  {profileImage ? (
+                    <Image
+                      source={{ uri: profileImage }}
+                      style={styles.profileImage}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={styles.profileImagePlaceholder}>
+                      <Ionicons name="person-outline" size={40} color={COLORS.textSecondary} />
+                      <Text style={styles.profileImageText}>
+                        Tap to add photo
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.profileImageBadge}>
+                    <Ionicons name="camera" size={16} color={COLORS.background} />
+                  </View>
+                </TouchableOpacity>
+                {errors.profileImage && (
+                  <Text style={styles.errorText}>{errors.profileImage}</Text>
+                )}
+                <Text style={styles.helperText}>
+                  Profile picture is required for sign-up
+                </Text>
+              </View>
+            )}
+            
             {/* Forgot Password Link - Only for Sign In */}
             {mode === 'signIn' && (
               <TouchableOpacity
@@ -693,6 +830,49 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     fontSize: 16,
     color: COLORS.textSecondary,
+  },
+  
+  // Profile image styles
+  profileImageContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignSelf: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  profileImagePlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.backgroundLight,
+  },
+  profileImageText: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  profileImageBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.background,
   },
 });
 

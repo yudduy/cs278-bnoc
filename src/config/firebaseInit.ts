@@ -95,29 +95,29 @@ const initializeFirebaseServices = () => {
 // Initialize Firebase services immediately
 initializeFirebaseServices();
 
-// Export initialized services with proper error handling
-export const firebaseApp = (() => {
+// Export initialized services with proper error handling and type casting
+export const firebaseApp: FirebaseApp = (() => {
   if (!firebaseAppInstance) {
     throw new Error('Firebase app not initialized');
   }
   return firebaseAppInstance;
 })();
 
-export const auth = (() => {
+export const auth: Auth = (() => {
   if (!authInstance) {
     throw new Error('Firebase Auth not initialized');
   }
   return authInstance;
 })();
 
-export const db = (() => {
+export const db: Firestore = (() => {
   if (!firestoreDb) {
     throw new Error('Firebase Firestore not initialized');
   }
   return firestoreDb;
 })();
 
-export const storage = (() => {
+export const storage: FirebaseStorage = (() => {
   if (!storageInstance) {
     throw new Error('Firebase Storage not initialized');
   }

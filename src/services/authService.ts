@@ -51,6 +51,7 @@ const createUserProfile = async (
   additionalData: {
     username: string;
     displayName?: string;
+    photoURL?: string;
   }
 ): Promise<User> => {
   const userRef = doc(db, 'users', firebaseUser.uid);
@@ -59,7 +60,7 @@ const createUserProfile = async (
     email: firebaseUser.email!,
     username: additionalData.username,
     displayName: additionalData.displayName || additionalData.username,
-    photoURL: firebaseUser.photoURL || undefined,
+    photoURL: additionalData.photoURL || firebaseUser.photoURL || undefined,
     isActive: true,
     flakeStreak: 0,
     maxFlakeStreak: 0,
@@ -81,8 +82,8 @@ const createUserProfile = async (
     createdAt: Timestamp.now(),
     lastActive: Timestamp.now(),
     lastUpdated: Timestamp.now(),
-    fcmToken: undefined,
-    pushToken: undefined
+    fcmToken: "none",
+    pushToken: "none"
   };
   
   // Create the document data with server timestamps
@@ -140,7 +141,8 @@ export const signUp = async (
   email: string, 
   password: string, 
   username: string,
-  displayName?: string
+  displayName?: string,
+  profileImageUri?: string
 ): Promise<User> => {
   try {
     // Validate Stanford email
@@ -167,15 +169,31 @@ export const signUp = async (
       password
     );
     
+    let photoURL: string | undefined;
+    
+    // Upload profile photo if provided
+    if (profileImageUri) {
+      try {
+        photoURL = await uploadProfilePhoto(userCredential.user.uid, profileImageUri);
+        logger.info('Profile photo uploaded successfully:', photoURL);
+      } catch (photoError) {
+        logger.error('Profile photo upload failed:', photoError);
+        // Continue with user creation even if photo upload fails
+        logger.warn('Continuing user creation without profile photo');
+      }
+    }
+    
     // Update Firebase Auth profile
     await updateProfile(userCredential.user, {
-      displayName: displayName || username
+      displayName: displayName || username,
+      photoURL: photoURL
     });
     
     // Create Firestore profile
     const userProfile = await createUserProfile(userCredential.user, {
       username,
-      displayName
+      displayName,
+      photoURL
     });
     
     // Store auth state
