@@ -99,7 +99,101 @@ The app follows a structured approach to Firebase integration:
    - `userService.ts`: User profile operations
    - `storageService.ts`: File storage operations
    - `feedService.ts`: Feed-related operations
+   - `chatService.ts`: Real-time messaging functionality
+   - `notificationService.ts`: Notification system operations
+   - `connectionService.ts`: User connections and social networking
 5. **Error Handling**: All Firebase operations use try/catch with the centralized logger utility
+
+## Core Features
+
+### Chat System
+
+The app includes a comprehensive chat system that enables real-time messaging between paired users:
+
+**Architecture:**
+- Each pairing automatically gets an associated chat room (`chatId` field in pairings)
+- Chat rooms are created when pairings are generated
+- Messages are stored in subcollections for scalability
+- Real-time updates using Firestore's onSnapshot listeners
+
+**Features:**
+- Text messaging between paired users
+- Image sharing capabilities
+- System messages for pairing events
+- Read receipts and message status tracking
+- Chat history preservation
+
+**Implementation Details:**
+- Chat rooms follow the naming convention: `chat_{pairingId}`
+- Messages support multiple types: text, image, and system
+- Last message and activity timestamps are tracked for UI optimization
+- User presence and typing indicators can be implemented using additional fields
+
+### User Connections System
+
+The app features a social networking system that tracks user connections and relationships:
+
+**Connection Management:**
+- Users can form connections after successful pairings
+- Connection counts are tracked for gamification
+- Connection history is maintained in the `connections` field
+- Bidirectional connections are supported
+
+**Privacy Controls:**
+- Users can control connection visibility via `privacySettings`
+- Option to show/hide connection count on profiles
+- Control over direct messaging permissions
+- Profile visibility settings for public feeds
+
+**Social Features:**
+- Connection-based recommendations for future pairings
+- Enhanced feed visibility for connected users
+- Ability to view mutual connections
+- Social proof through connection counts
+
+### Notification System
+
+Comprehensive notification system for user engagement and communication:
+
+**Notification Types:**
+- **Pairing**: New daily pairing assignments
+- **Completion**: Pairing completion confirmations
+- **Reminder**: Afternoon reminders for pending pairings
+- **Final Reminder**: Urgent pre-deadline notifications
+- **Connection**: New connection requests and approvals
+- **System**: Administrative and system messages
+
+**Delivery Mechanisms:**
+- Firebase Cloud Messaging (FCM) for push notifications
+- In-app notification center with read/unread status
+- Email notifications for critical events (future enhancement)
+
+**Smart Notification Features:**
+- Quiet hours respect user preferences
+- Notification batching to prevent spam
+- Deep linking for direct navigation to relevant content
+- Rich notification data including partner information
+
+### User Archival System
+
+Automatic cleanup system for maintaining database hygiene:
+
+**Purpose:**
+- Archive users who registered but never created Firebase auth accounts
+- Maintain referential integrity in pairings and connections
+- Provide audit trail for user lifecycle management
+
+**Process:**
+- Users without Firebase auth accounts are identified
+- User data is moved to `archived_users` collection
+- Pairings are updated with `cancelled_user_deleted` status
+- References are cleaned up to prevent orphaned data
+
+**Benefits:**
+- Reduces active user count for pairing algorithms
+- Maintains data consistency
+- Provides historical record for analytics
+- Prevents errors from missing user references
 
 ## Database Schema
 
@@ -114,10 +208,15 @@ firebase
 ├── pairings/            # Daily user pairings
 │   ├── {pairingId}/     # Individual pairing documents
 │   │   └── comments/    # Comments subcollection (optional)
-├── pairingHistory/      # Historical pairing data
-│   └── {userId}/        # User-specific pairing history
+├── chatRooms/           # Chat functionality for paired users
+│   └── {chatId}/        # Individual chat room documents
+│       └── messages/    # Messages subcollection
+├── notifications/       # User notification system
+│   └── {notificationId}/ # Individual notification documents
 ├── globalFeed/          # Public completed pairings
 │   └── {pairingId}/     # Feed entries
+├── archived_users/      # Cleanup system for users without auth
+│   └── {userId}/        # Archived user documents
 ├── system/              # System configuration
 │   └── waitlist/        # Daily waitlist
 └── notificationSettings/ # User notification preferences
@@ -139,20 +238,30 @@ interface User {
   photoURL?: string;       // URL to user's profile photo
   createdAt: Timestamp;    // When the account was created
   lastActive: Timestamp;   // Last activity timestamp
+  lastUpdated: Timestamp;  // Last profile update timestamp
   isActive: boolean;       // Whether user is active in the pairing system
   flakeStreak: number;     // Current streak of missed pairings
   maxFlakeStreak: number;  // Highest flake streak recorded
-  blockedIds: string[];    // IDs of blocked users
-  notificationSettings: {  // User's notification preferences
+  blockedIds: string[];    // IDs of blocked users (stored as JSON string)
+  connections: string[];   // IDs of connected users (stored as JSON string)
+  connectionCount: number; // Total number of connections made
+  notificationSettings: {  // User's notification preferences (stored as JSON string)
     pairingNotification: boolean;    // Receive new pairing notifications
     reminderNotification: boolean;   // Receive reminder notifications
     completionNotification: boolean; // Receive completion notifications
     quietHoursStart: number;         // Start hour (0-23) for quiet time
     quietHoursEnd: number;           // End hour (0-23) for quiet time
   };
+  privacySettings: {       // User's privacy preferences (stored as JSON string)
+    showProfileInFeed: boolean;      // Show profile in public feed
+    allowDirectMessages: boolean;    // Allow direct messages from connections
+    showConnectionCount: boolean;    // Show connection count on profile
+  };
   snoozeTokensRemaining: number;     // Available snooze tokens
-  snoozeTokenLastRefilled: Timestamp; // Last token refill date
+  snoozeTokenLastRefilled?: Timestamp; // Last token refill date
   fcmToken?: string;       // Firebase Cloud Messaging token
+  pushToken?: string;      // Push notification token
+  password?: string;       // Legacy field - should be removed in production
 }
 ```
 
@@ -174,10 +283,10 @@ interface Pairing {
   id: string;               // Unique pairing identifier
   date: Timestamp;          // Date the pairing was created
   expiresAt: Timestamp;     // When the pairing expires (10:00 PM PT)
-  users: string[];          // IDs of the paired users (always 2)
+  users: string[];          // IDs of the paired users (stored as JSON string, always 2)
   user1_id: string;         // ID of the first user
   user2_id: string;         // ID of the second user
-  status: 'pending' | 'user1_submitted' | 'user2_submitted' | 'completed' | 'flaked' | 'snoozed';
+  status: 'pending' | 'user1_submitted' | 'user2_submitted' | 'completed' | 'flaked' | 'snoozed' | 'cancelled_user_deleted';
   user1_photoURL?: string;  // URL to user1's photo
   user2_photoURL?: string;  // URL to user2's photo 
   user1_submittedAt?: Timestamp; // When user1 submitted their photo
@@ -185,10 +294,13 @@ interface Pairing {
   completedAt?: Timestamp;  // When the pairing was completed
   isPrivate: boolean;       // Whether the pairing is private or public
   likesCount: number;       // Count of likes
-  likedBy: string[];        // IDs of users who liked this pairing
+  likedBy: string[];        // IDs of users who liked this pairing (stored as JSON string)
   commentsCount: number;    // Count of comments
-  virtualMeetingLink?: string; // Optional virtual meeting link
+  chatId: string;           // Reference to the associated chat room
+  virtualMeetingLink?: string; // Jitsi Meet link for virtual meetings
+  deletedUserId?: string;   // ID of user who was deleted (for cancelled_user_deleted status)
   lastUpdatedAt: Timestamp; // Last update timestamp
+  updatedAt?: Timestamp;    // Alternative update timestamp field
 }
 ```
 
@@ -204,6 +316,86 @@ interface Comment {
 }
 ```
 
+#### `chatRooms` Collection
+
+Stores chat room data for paired users, enabling real-time messaging between daily pairings.
+
+```typescript
+interface ChatRoom {
+  id: string;              // Unique chat room identifier (format: "chat_{pairingId}")
+  pairingId: string;       // Reference to the associated pairing
+  userIds: string[];       // IDs of users in the chat (stored as JSON string, always 2)
+  createdAt: Timestamp;    // When the chat room was created
+  lastMessage?: string;    // Text of the most recent message
+  lastActivityAt: Timestamp; // Last activity timestamp
+}
+```
+
+Messages Subcollection (`chatRooms/{chatId}/messages/{messageId}`):
+```typescript
+interface Message {
+  id: string;              // Unique message identifier
+  senderId: string;        // ID of the user who sent the message
+  text: string;            // Message content
+  createdAt: Timestamp;    // When the message was sent
+  type: 'text' | 'image' | 'system'; // Message type
+  imageURL?: string;       // URL to image if type is 'image'
+  readBy: string[];        // IDs of users who have read the message
+}
+```
+
+#### `notifications` Collection
+
+Stores user notifications for various app events including pairing completions, reminders, and system messages.
+
+```typescript
+interface Notification {
+  id: string;              // Unique notification identifier
+  userId: string;          // ID of the user receiving the notification
+  type: 'pairing' | 'completion' | 'reminder' | 'final_reminder' | 'connection' | 'system';
+  title: string;           // Notification title
+  body: string;            // Notification message body
+  data: {                  // Additional notification data (stored as JSON object)
+    pairingId?: string;    // Associated pairing ID
+    partnerId?: string;    // Partner user ID
+    partnerName?: string;  // Partner display name
+    partnerPhotoURL?: string; // Partner profile photo URL
+    actionType?: string;   // Type of action that triggered notification
+    deepLink?: string;     // Deep link for navigation
+  };
+  senderId?: string;       // ID of user who triggered the notification
+  createdAt: Timestamp;    // When the notification was created
+  read: boolean;           // Whether the notification has been read
+  sentAt?: Timestamp;      // When the notification was sent (for push notifications)
+}
+```
+
+#### `archived_users` Collection
+
+Stores archived user data for cleanup purposes, specifically for users who registered but never created Firebase auth accounts.
+
+```typescript
+interface ArchivedUser {
+  id: string;              // Original user ID
+  email: string;           // User's Stanford email address
+  username: string;        // Username that was registered
+  displayName?: string;    // Display name if provided
+  photoURL?: string;       // Profile photo URL if provided
+  createdAt: Timestamp;    // When the original account was created
+  lastActive: Timestamp;   // Last activity timestamp
+  isActive: boolean;       // Whether user was active when archived
+  flakeStreak: number;     // Flake streak at time of archival
+  maxFlakeStreak: number;  // Max flake streak at time of archival
+  connections: string[];   // Connections at time of archival (stored as JSON string)
+  notificationSettings: object; // Notification settings (stored as JSON object)
+  blockedIds: string[];    // Blocked user IDs (stored as JSON string)
+  reason: string;          // Reason for archival (e.g., "no_firebase_auth_account")
+  archivedAt: Timestamp;   // When the user was archived
+  snoozeTokensRemaining?: number; // Snooze tokens if applicable
+  privacySettings?: object; // Privacy settings (stored as JSON object)
+  fcmToken?: string;       // FCM token if available
+}
+
 #### `globalFeed` Collection
 
 Denormalized collection of public pairings for the global feed.
@@ -212,10 +404,16 @@ Denormalized collection of public pairings for the global feed.
 interface GlobalFeedItem {
   pairingId: string;       // Reference to the original pairing
   date: Timestamp;         // Date of the pairing
-  users: string[];         // IDs of the paired users
-  selfieURL: string;       // URL to the paired selfie image
-  likes: number;           // Count of likes
-  commentCount: number;    // Count of comments
+  users: string[];         // IDs of the paired users (stored as JSON string)
+  user1_id?: string;       // ID of the first user
+  user2_id?: string;       // ID of the second user
+  user1_photoURL?: string; // URL to user1's photo
+  user2_photoURL?: string; // URL to user2's photo
+  completedAt?: Timestamp; // When the pairing was completed
+  likesCount: number;      // Count of likes
+  commentsCount: number;   // Count of comments
+  isPrivate: boolean;      // Whether the pairing is private
+  createdAt: Timestamp;    // When the feed item was created
 }
 ```
 
@@ -273,6 +471,51 @@ service cloud.firestore {
         allow read: if isUser(userId);
         allow write: if false; // Only Cloud Functions can write
       }
+    }
+    
+    // Chat rooms collection
+    match /chatRooms/{chatId} {
+      allow read: if isAuthenticated() && 
+                    resource.data.userIds.hasAny([request.auth.uid]);
+      allow create: if false; // Only Cloud Functions can create
+      allow update: if isAuthenticated() && 
+                      resource.data.userIds.hasAny([request.auth.uid]) &&
+                      (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['lastMessage', 'lastActivityAt']));
+      allow delete: if false;
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && 
+                      get(/databases/$(database)/documents/chatRooms/$(chatId)).data.userIds.hasAny([request.auth.uid]);
+        allow create: if isAuthenticated() && 
+                        get(/databases/$(database)/documents/chatRooms/$(chatId)).data.userIds.hasAny([request.auth.uid]) &&
+                        request.resource.data.senderId == request.auth.uid;
+        allow update: if isAuthenticated() && 
+                        (request.auth.uid == resource.data.senderId ||
+                         get(/databases/$(database)/documents/chatRooms/$(chatId)).data.userIds.hasAny([request.auth.uid]));
+        allow delete: if isAuthenticated() && 
+                        request.auth.uid == resource.data.senderId;
+      }
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && 
+                    request.auth.uid == resource.data.userId;
+      allow create: if false; // Only Cloud Functions can create
+      allow update: if isAuthenticated() && 
+                      request.auth.uid == resource.data.userId &&
+                      (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['read']));
+      allow delete: if isAuthenticated() && 
+                      request.auth.uid == resource.data.userId;
+    }
+    
+    // Archived users collection
+    match /archived_users/{userId} {
+      allow read: if false; // Only admin/Cloud Functions can read
+      allow write: if false; // Only admin/Cloud Functions can write
     }
     
     // Pairings collection
@@ -436,6 +679,9 @@ getCurrentUser(): Promise<User | null>
 getUserById(userId: string): Promise<User | null>
 updateUserProfile(userId: string, data: Partial<User>): Promise<void>
 getUserStats(userId: string): Promise<UserStats>
+getUserConnections(userId: string): Promise<User[]>
+addUserConnection(userId: string, connectionId: string): Promise<void>
+removeUserConnection(userId: string, connectionId: string): Promise<void>
 
 // Pairing Methods
 getCurrentPairing(userId: string): Promise<Pairing | null>
@@ -447,6 +693,26 @@ completePairing(
   isPrivate: boolean
 ): Promise<void>
 getPairingHistory(userId: string, limit?: number): Promise<Pairing[]>
+
+// Chat Methods
+getChatRoom(pairingId: string): Promise<ChatRoom | null>
+getChatMessages(
+  chatId: string,
+  limit?: number,
+  startAfter?: any
+): Promise<{
+  messages: Message[];
+  lastVisible: any;
+  hasMore: boolean;
+}>
+sendMessage(
+  chatId: string,
+  senderId: string,
+  text: string,
+  type?: 'text' | 'image' | 'system'
+): Promise<Message>
+markMessageAsRead(chatId: string, messageId: string, userId: string): Promise<void>
+subscribeToChat(chatId: string, callback: (messages: Message[]) => void): () => void
 
 // Feed Methods
 getFeed(
@@ -482,14 +748,35 @@ sendPairingReminder(
   recipientId: string
 ): Promise<void>
 
+// Notification Methods
+getUserNotifications(
+  userId: string,
+  limit?: number,
+  unreadOnly?: boolean
+): Promise<Notification[]>
+markNotificationAsRead(notificationId: string): Promise<void>
+markAllNotificationsAsRead(userId: string): Promise<void>
+createNotification(notification: Partial<Notification>): Promise<void>
+subscribeToNotifications(userId: string, callback: (notifications: Notification[]) => void): () => void
+
 // Settings Methods
 getUserNotificationSettings(userId: string): Promise<NotificationSettings | null>
 updateUserNotificationSettings(
   userId: string,
   settings: Partial<NotificationSettings>
 ): Promise<void>
+getUserPrivacySettings(userId: string): Promise<PrivacySettings | null>
+updateUserPrivacySettings(
+  userId: string,
+  settings: Partial<PrivacySettings>
+): Promise<void>
 blockUser(userId: string, blockedUserId: string): Promise<void>
 unblockUser(userId: string, blockedUserId: string): Promise<void>
+
+// Archive Methods
+archiveUser(userId: string, reason: string): Promise<void>
+getArchivedUsers(limit?: number): Promise<ArchivedUser[]>
+restoreArchivedUser(userId: string): Promise<void>
 ```
 
 ### Standardized Error Handling
@@ -685,17 +972,69 @@ For production deployment, set up:
 
 Create the following indexes for efficient queries:
 
+### Required Indexes
+
 1. **Collection**: `pairings`
    - **Fields**: `users` (array-contains), `date` (desc)
    - **Query Scope**: Collection
+   - **Purpose**: Get user's pairing history
 
 2. **Collection**: `pairings`
    - **Fields**: `status` (asc), `date` (desc)
    - **Query Scope**: Collection
+   - **Purpose**: Query pairings by status and date
 
-3. **Collection**: `globalFeed`
+3. **Collection**: `pairings`
+   - **Fields**: `status` (asc), `expiresAt` (asc)
+   - **Query Scope**: Collection
+   - **Purpose**: Find expired pairings for cleanup
+
+4. **Collection**: `globalFeed`
    - **Fields**: `date` (desc)
    - **Query Scope**: Collection
+   - **Purpose**: Order feed items chronologically
+
+5. **Collection**: `notifications`
+   - **Fields**: `userId` (asc), `createdAt` (desc)
+   - **Query Scope**: Collection
+   - **Purpose**: Get user notifications ordered by time
+
+6. **Collection**: `notifications`
+   - **Fields**: `userId` (asc), `read` (asc), `createdAt` (desc)
+   - **Query Scope**: Collection
+   - **Purpose**: Get unread notifications for user
+
+7. **Collection Group**: `messages`
+   - **Fields**: `createdAt` (desc)
+   - **Query Scope**: Collection Group
+   - **Purpose**: Order messages within chat rooms
+
+8. **Collection**: `users`
+   - **Fields**: `isActive` (asc), `flakeStreak` (asc)
+   - **Query Scope**: Collection
+   - **Purpose**: Find active users with low flake streak for pairing
+
+9. **Collection**: `archived_users`
+   - **Fields**: `archivedAt` (desc)
+   - **Query Scope**: Collection
+   - **Purpose**: Order archived users by archival date
+
+### Composite Indexes for Advanced Queries
+
+10. **Collection**: `pairings`
+    - **Fields**: `user1_id` (asc), `status` (asc), `date` (desc)
+    - **Query Scope**: Collection
+    - **Purpose**: Get specific user's pairings with status filter
+
+11. **Collection**: `pairings`
+    - **Fields**: `user2_id` (asc), `status` (asc), `date` (desc)
+    - **Query Scope**: Collection
+    - **Purpose**: Get specific user's pairings with status filter
+
+12. **Collection**: `chatRooms`
+    - **Fields**: `userIds` (array-contains), `lastActivityAt` (desc)
+    - **Query Scope**: Collection
+    - **Purpose**: Get user's chat rooms ordered by activity
 
 ## Recent Firebase Implementation Improvements
 
@@ -745,14 +1084,73 @@ The app has been updated to use a single camera system:
 3. **Backward Compatibility**: Added a backwards-compatible `completePairing` function that delegates to the new implementation
 4. **Improved Status Tracking**: Enhanced status tracking to monitor submission progress more clearly
 
+## Data Structure Considerations
+
+### JSON Strings vs Native Arrays
+
+Several fields in the database are currently stored as JSON strings rather than native Firestore arrays. This approach has trade-offs:
+
+**Fields Stored as JSON Strings:**
+- `users.connections` - User connection IDs
+- `users.blockedIds` - Blocked user IDs  
+- `users.notificationSettings` - Notification preferences
+- `users.privacySettings` - Privacy preferences
+- `pairings.users` - Paired user IDs
+- `pairings.likedBy` - User IDs who liked the pairing
+- `chatRooms.userIds` - Chat participant IDs
+- `globalFeed.users` - Feed item user IDs
+
+**Advantages of JSON Strings:**
+- Simpler client-side handling for complex objects
+- Consistent serialization/deserialization
+- Easier to debug and inspect in console
+- Avoids Firestore array limitations (500 elements max)
+
+**Disadvantages of JSON Strings:**
+- Cannot use Firestore array queries (`array-contains`, `array-contains-any`)
+- Requires client-side parsing for filtering/searching
+- Less efficient for large arrays
+- Cannot leverage Firestore's atomic array operations
+
+**Migration Recommendations:**
+- For small, frequently queried arrays (< 50 elements): Consider native arrays
+- For large or complex data structures: Keep as JSON strings
+- For query-critical fields: Maintain both formats (denormalized)
+
 ## Performance Considerations
 
-1. Use `limit()` and pagination for querying large collections
-2. Create composite indexes for complex queries
-3. Optimize storage rules to minimize validation checks
-4. Use batched writes for updating multiple documents
-5. Consider using Firestore's atomic operations (arrayUnion, arrayRemove, increment) for concurrency safety
-6. Use transactions for operations that need to be atomic
-7. Implement client-side image caching via expo-image for better performance
-8. Compress images before upload to reduce storage usage and improve load times
-9. Use proper error handling for all Firebase operations
+1. **Query Optimization**
+   - Use `limit()` and pagination for querying large collections
+   - Create composite indexes for complex queries
+   - Leverage Firestore's query caching for frequently accessed data
+   - Use `where()` clauses to minimize data transfer
+
+2. **Write Operations**
+   - Use batched writes for updating multiple documents atomically
+   - Implement atomic operations (arrayUnion, arrayRemove, increment) for concurrency safety
+   - Use transactions for operations that need to be atomic
+   - Minimize write operations by updating only changed fields
+
+3. **Real-time Updates**
+   - Use `onSnapshot` listeners judiciously to avoid excessive bandwidth
+   - Implement listener cleanup to prevent memory leaks
+   - Consider using `limitToLast()` for chat messages to reduce initial load
+   - Use local caching for frequently accessed data
+
+4. **Storage and Media**
+   - Compress images before upload to reduce storage costs and improve load times
+   - Implement client-side image caching via expo-image
+   - Use appropriate image formats (WebP when supported)
+   - Implement progressive image loading for better UX
+
+5. **Security and Validation**
+   - Optimize security rules to minimize validation checks
+   - Use server-side validation in Cloud Functions for complex business logic
+   - Implement rate limiting for write operations
+   - Monitor for suspicious activity patterns
+
+6. **Error Handling and Monitoring**
+   - Implement comprehensive error handling for all Firebase operations
+   - Use Firebase Performance Monitoring to track bottlenecks
+   - Set up alerting for error rates and performance degradation
+   - Log critical operations for debugging and analytics

@@ -131,36 +131,72 @@ async function removeUserFromPairings(userId) {
 async function removeUserFromConnections(userId, userConnections = []) {
   console.log(`\n🔄 Removing user from other users' connections...`);
   
-  if (!userConnections || userConnections.length === 0) {
+  // Handle connections stored as JSON string or array
+  let connectionsArray = [];
+  if (typeof userConnections === 'string') {
+    try {
+      connectionsArray = JSON.parse(userConnections);
+    } catch (error) {
+      console.log(`   ⚠️  Invalid connections data format, skipping connection cleanup`);
+      return;
+    }
+  } else if (Array.isArray(userConnections)) {
+    connectionsArray = userConnections;
+  }
+  
+  if (!connectionsArray || connectionsArray.length === 0) {
     console.log(`   ✅ User has no connections to clean up`);
     return;
   }
   
-  console.log(`   Found ${userConnections.length} connection(s) to update`);
+  console.log(`   Found ${connectionsArray.length} connection(s) to update`);
   
   const batch = db.batch();
+  let updatedConnections = 0;
   
-  for (const connectionId of userConnections) {
+  for (const connectionId of connectionsArray) {
     try {
       const connectionRef = db.collection('users').doc(connectionId);
       const connectionDoc = await connectionRef.get();
       
-      if (connectionDoc.exists()) {
+      if (connectionDoc.exists) {
         const connectionData = connectionDoc.data();
         console.log(`   - Removing from user: ${connectionData.username || connectionId}`);
         
+        // Handle connections that might be stored as JSON string
+        let currentConnections = connectionData.connections || [];
+        if (typeof currentConnections === 'string') {
+          try {
+            currentConnections = JSON.parse(currentConnections);
+          } catch (parseError) {
+            console.log(`   ⚠️  Could not parse connections for ${connectionId}, skipping`);
+            continue;
+          }
+        }
+        
+        // Remove the deleted user from the connections array
+        const updatedConnections = currentConnections.filter(id => id !== userId);
+        
         batch.update(connectionRef, {
-          connections: admin.firestore.FieldValue.arrayRemove(userId),
-          connectionCount: admin.firestore.FieldValue.increment(-1)
+          connections: JSON.stringify(updatedConnections),
+          connectionCount: Math.max(0, (connectionData.connectionCount || 0) - 1)
         });
+        
+        updatedConnections++;
+      } else {
+        console.log(`   ⚠️  Connection user ${connectionId} not found, skipping`);
       }
     } catch (error) {
       console.error(`   ⚠️  Error updating connection ${connectionId}:`, error.message);
     }
   }
   
-  await batch.commit();
-  console.log(`   ✅ Updated connections`);
+  if (updatedConnections > 0) {
+    await batch.commit();
+    console.log(`   ✅ Updated ${updatedConnections} connection(s)`);
+  } else {
+    console.log(`   ⚠️  No connections were updated`);
+  }
 }
 
 /**
@@ -198,23 +234,98 @@ async function deleteUserFromFirestore(userId) {
 }
 
 /**
- * Clean up user's notification settings
+ * Clean up user's notification settings and notifications
  */
 async function cleanupNotificationSettings(userId) {
-  console.log(`\n🔄 Cleaning up notification settings...`);
+  console.log(`\n🔄 Cleaning up notification settings and notifications...`);
+  
+  let cleanupCount = 0;
   
   try {
+    // Clean up notification settings
     const notificationRef = db.collection('notificationSettings').doc(userId);
     const notificationDoc = await notificationRef.get();
     
-    if (notificationDoc.exists()) {
+    if (notificationDoc.exists) {
       await notificationRef.delete();
       console.log(`   ✅ Deleted notification settings`);
+      cleanupCount++;
     } else {
       console.log(`   ✅ No notification settings found`);
     }
   } catch (error) {
     console.error(`   ⚠️  Error cleaning up notification settings:`, error.message);
+  }
+  
+  try {
+    // Clean up user's notifications
+    const notificationsRef = db.collection('notifications');
+    const userNotifications = await notificationsRef.where('userId', '==', userId).get();
+    
+    if (!userNotifications.empty) {
+      const batch = db.batch();
+      userNotifications.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      console.log(`   ✅ Deleted ${userNotifications.size} notification(s)`);
+      cleanupCount += userNotifications.size;
+    } else {
+      console.log(`   ✅ No notifications found for user`);
+    }
+  } catch (error) {
+    console.error(`   ⚠️  Error cleaning up notifications:`, error.message);
+  }
+  
+  return cleanupCount;
+}
+
+/**
+ * Clean up chat rooms and messages where user was a participant
+ */
+async function cleanupUserChats(userId) {
+  console.log(`\n🔄 Cleaning up user's chat rooms...`);
+  
+  try {
+    const chatRoomsRef = db.collection('chatRooms');
+    const userChats = await chatRoomsRef.where('userIds', 'array-contains', userId).get();
+    
+    if (userChats.empty) {
+      console.log(`   ✅ No chat rooms found for user`);
+      return 0;
+    }
+    
+    console.log(`   Found ${userChats.size} chat room(s) to clean up`);
+    
+    const batch = db.batch();
+    let cleanedChats = 0;
+    
+    for (const chatDoc of userChats.docs) {
+      const chatData = chatDoc.data();
+      const chatId = chatDoc.id;
+      
+      // Delete all messages in the chat room
+      const messagesRef = db.collection('chatRooms').doc(chatId).collection('messages');
+      const messages = await messagesRef.get();
+      
+      messages.forEach(messageDoc => {
+        batch.delete(messageDoc.ref);
+      });
+      
+      // Delete the chat room itself
+      batch.delete(chatDoc.ref);
+      cleanedChats++;
+      
+      console.log(`   - Cleaning chat room: ${chatId} (${messages.size} messages)`);
+    }
+    
+    await batch.commit();
+    console.log(`   ✅ Cleaned up ${cleanedChats} chat room(s)`);
+    return cleanedChats;
+    
+  } catch (error) {
+    console.error(`   ⚠️  Error cleaning up chat rooms:`, error.message);
+    return 0;
   }
 }
 
@@ -248,13 +359,16 @@ async function deleteUser() {
         // Step 2: Remove from other users' connections
         await removeUserFromConnections(user.id, user.connections);
         
-        // Step 3: Clean up notification settings
-        await cleanupNotificationSettings(user.id);
+        // Step 3: Clean up chat rooms and messages
+        const cleanedChats = await cleanupUserChats(user.id);
         
-        // Step 4: Delete from Firestore
+        // Step 4: Clean up notification settings and notifications
+        const cleanedNotifications = await cleanupNotificationSettings(user.id);
+        
+        // Step 5: Delete from Firestore
         await deleteUserFromFirestore(user.id);
         
-        // Step 5: Delete from Firebase Auth
+        // Step 6: Delete from Firebase Auth
         await deleteUserFromAuth(user.id);
         
         console.log(`\n✅ Successfully deleted user: ${username}`);
@@ -262,8 +376,25 @@ async function deleteUser() {
         console.log(`   - User removed from Firebase Auth`);
         console.log(`   - User document deleted from Firestore`);
         console.log(`   - User removed from active pairings`);
-        console.log(`   - User removed from ${user.connections?.length || 0} connection(s)`);
-        console.log(`   - Notification settings cleaned up`);
+        
+        // Handle connections count display
+        let connectionsCount = 0;
+        if (user.connections) {
+          if (typeof user.connections === 'string') {
+            try {
+              const parsed = JSON.parse(user.connections);
+              connectionsCount = Array.isArray(parsed) ? parsed.length : 0;
+            } catch (e) {
+              connectionsCount = 0;
+            }
+          } else if (Array.isArray(user.connections)) {
+            connectionsCount = user.connections.length;
+          }
+        }
+        
+        console.log(`   - User removed from ${connectionsCount} connection(s)`);
+        console.log(`   - Cleaned up ${cleanedChats} chat room(s)`);
+        console.log(`   - Cleaned up ${cleanedNotifications} notification(s) and settings`);
         
       } catch (error) {
         console.error(`\n❌ Error during deletion process:`, error.message);

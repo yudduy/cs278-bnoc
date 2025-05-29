@@ -55,7 +55,16 @@ node deleteUser.js <username>
 - Requires "DELETE" confirmation
 - Updates active pairings (marks as cancelled)
 - Removes user from other users' connections
+- Cleans up chat rooms and messages
+- Deletes user's notifications and settings
 - Deletes Firestore document and Firebase Auth account
+
+**Recent Improvements (May 2025)**:
+- ✅ Fixed JSON string parsing for connections field
+- ✅ Added comprehensive chat room cleanup
+- ✅ Enhanced notification cleanup (both settings and notifications)
+- ✅ Improved error handling and progress reporting
+- ✅ Added detailed summary with actual cleanup counts
 
 **Example**:
 ```bash
