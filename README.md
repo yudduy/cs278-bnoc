@@ -4,6 +4,15 @@ A React Native app built with Firebase for daily photo pairings between friends.
 
 ## Recent Feature Updates
 
+### 🤝 Auto-Pairing System
+New users are automatically paired to ensure immediate app usability:
+
+- **Instant pairing** - New users are immediately paired with jleong222 or test accounts
+- **Zero waiting time** - No need to wait for other users to join
+- **Smart fallback system** - Creates test accounts automatically when needed
+- **Development friendly** - Consistent test accounts with known credentials
+- **Seamless integration** - Works during both sign-up and login flows
+
 ### 🎯 Together Mode Only Implementation
 The app has been updated to focus exclusively on collaborative photo sharing:
 
@@ -38,6 +47,13 @@ The app has been updated to focus exclusively on collaborative photo sharing:
    - Automatic scroll to new pairing when completed
 
 ### 🔧 Technical Implementation
+
+#### Auto-Pairing System
+- **Smart pairing logic** - Prioritizes jleong222, falls back to test account creation
+- **Automatic test accounts** - Creates test_1, test_2, etc. with password123
+- **Integrated flows** - Triggers during sign-up and login for users without pairings
+- **Non-blocking design** - Never prevents successful authentication
+- **Firebase Auth integration** - Seamlessly creates test users in Firebase
 
 #### Real-Time Features
 - **Firebase Firestore listeners** using `onSnapshot` for live updates
@@ -118,8 +134,13 @@ src/
 ├── context/
 │   ├── PairingContext.tsx               # Pairing state management
 │   └── FeedContext.tsx                  # Feed state management
-└── services/
-    └── firebase.ts                      # Firebase service layer
+├── services/
+│   ├── firebase.ts                      # Firebase service layer
+│   └── autoPairingService.ts            # Auto-pairing logic
+├── docs/
+│   └── AUTO_PAIRING_FEATURE.md          # Auto-pairing documentation
+└── scripts/
+    └── createTestAccounts.js            # Manual test account creation
 ```
 
 ## Contributing

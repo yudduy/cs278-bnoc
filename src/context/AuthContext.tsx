@@ -11,6 +11,7 @@ import { useFirebase } from '../providers/FirebaseProvider';
 import { User } from '../types';
 import * as authService from '../services/authService';
 import * as userService from '../services/userService';
+import * as autoPairingService from '../services/autoPairingService';
 import logger from '../utils/logger';
 
 // Context type definitions
@@ -101,6 +102,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
               setIsAuthenticated(true);
               setIsNewUser(false); // Existing user
               logger.info('AuthContext: Authentication state updated - isAuthenticated: true');
+              
+              // Check if user needs auto-pairing (for existing users without pairings today)
+              try {
+                const needsPairing = await autoPairingService.needsAutoPairing(userProfile.id);
+                if (needsPairing) {
+                  logger.info('Existing user needs auto-pairing:', userProfile.id);
+                  const autoPairingSuccess = await autoPairingService.autoPairNewUser(userProfile.id);
+                  
+                  if (autoPairingSuccess) {
+                    logger.info('Auto-pairing successful for existing user:', userProfile.id);
+                  } else {
+                    logger.warn('Auto-pairing failed for existing user:', userProfile.id);
+                  }
+                }
+              } catch (autoPairingError) {
+                logger.error('Auto-pairing check error for existing user:', userProfile.id, autoPairingError);
+                // Don't fail the login process if auto-pairing fails
+              }
             } else {
               // This shouldn't happen with proper signup flow
               logger.warn('No user profile found for authenticated user');
@@ -191,6 +210,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
       
       // State will be updated by onAuthStateChanged listener
       logger.info('Sign up successful:', userData.id);
+      
+      // Trigger auto-pairing for the new user
+      try {
+        logger.info('Attempting to auto-pair new user:', userData.id);
+        const autoPairingSuccess = await autoPairingService.autoPairNewUser(userData.id);
+        
+        if (autoPairingSuccess) {
+          logger.info('Auto-pairing successful for new user:', userData.id);
+        } else {
+          logger.warn('Auto-pairing failed for new user:', userData.id);
+          // Don't fail the signup process if auto-pairing fails
+        }
+      } catch (autoPairingError) {
+        logger.error('Auto-pairing error for new user:', userData.id, autoPairingError);
+        // Don't fail the signup process if auto-pairing fails
+      }
       
     } catch (err: any) {
       logger.error('Sign up error:', err);

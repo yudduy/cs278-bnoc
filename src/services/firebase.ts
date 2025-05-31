@@ -39,6 +39,7 @@ const executeWithRetry = async (operation: Function, maxRetries = 3): Promise<an
 import * as UserService from './userService';
 import * as PairingService from './pairingService';
 import * as FeedService from './feedService';
+import * as AutoPairingService from './autoPairingService';
 
 // Import types
 import { User, Pairing, Comment, NotificationSettings, PrivacySettings as UserPrivacySettings, UserFeedItem } from '../types';
@@ -402,6 +403,17 @@ const firebaseService = {
       console.error('Error updating pairing photo mode:', error);
       throw error;
     }
+  },
+
+  /**
+   * Auto-pairing methods for new users
+   */
+  autoPairNewUser: async (userId: string): Promise<boolean> => {
+    return AutoPairingService.autoPairNewUser(userId);
+  },
+  
+  needsAutoPairing: async (userId: string): Promise<boolean> => {
+    return AutoPairingService.needsAutoPairing(userId);
   },
 };
 
