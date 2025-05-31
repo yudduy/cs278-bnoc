@@ -31,6 +31,7 @@ import logger from '../utils/logger';
 const TARGET_USER_USERNAME = 'jleong222';
 const TEST_ACCOUNT_PASSWORD = 'password123';
 const TEST_ACCOUNT_EMAIL_DOMAIN = '@testuser.bnoc.stanford.edu';
+const DEFAULT_PHOTO_URL = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 
 /**
  * Get the target user (jleong222) from the database
@@ -128,6 +129,8 @@ const createTestAccount = async (testNumber: number): Promise<User | null> => {
     const email = `${username}${TEST_ACCOUNT_EMAIL_DOMAIN}`;
     const displayName = `Test User ${testNumber}`;
     
+    logger.info(`Creating test account: ${username} with default photo`);
+    
     // Create Firebase Auth user
     const userCredential = await createUserWithEmailAndPassword(
       auth,
@@ -135,9 +138,10 @@ const createTestAccount = async (testNumber: number): Promise<User | null> => {
       TEST_ACCOUNT_PASSWORD
     );
     
-    // Update Firebase Auth profile
+    // Update Firebase Auth profile with photo URL
     await updateProfile(userCredential.user, {
-      displayName: displayName
+      displayName: displayName,
+      photoURL: DEFAULT_PHOTO_URL
     });
     
     // Create user document in Firestore
@@ -145,7 +149,7 @@ const createTestAccount = async (testNumber: number): Promise<User | null> => {
       email: email,
       username: username,
       displayName: displayName,
-      photoURL: undefined,
+      photoURL: DEFAULT_PHOTO_URL, // Set the default photo URL
       isActive: true,
       flakeStreak: 0,
       maxFlakeStreak: 0,
@@ -179,7 +183,7 @@ const createTestAccount = async (testNumber: number): Promise<User | null> => {
       lastUpdated: serverTimestamp(),
     });
     
-    logger.info(`Created test account: ${username} (${userCredential.user.uid})`);
+    logger.info(`Created test account: ${username} (${userCredential.user.uid}) with photo URL: ${DEFAULT_PHOTO_URL}`);
     
     return {
       id: userCredential.user.uid,
@@ -246,43 +250,59 @@ const createPairing = async (user1Id: string, user2Id: string): Promise<string |
  */
 export const autoPairNewUser = async (newUserId: string): Promise<boolean> => {
   try {
-    logger.info(`Attempting to auto-pair new user: ${newUserId}`);
+    logger.info(`🤝 AUTO-PAIRING: Starting auto-pair process for new user: ${newUserId}`);
     
     // Step 1: Try to pair with jleong222
+    logger.info(`🔍 AUTO-PAIRING: Looking for target user ${TARGET_USER_USERNAME}`);
     const targetUser = await getTargetUser();
     
     if (targetUser) {
+      logger.info(`✅ AUTO-PAIRING: Found target user ${TARGET_USER_USERNAME} (${targetUser.id})`);
+      
       const isAvailable = await isTargetUserAvailable(targetUser.id);
+      logger.info(`📅 AUTO-PAIRING: Target user availability check: ${isAvailable ? 'AVAILABLE' : 'BUSY'}`);
       
       if (isAvailable) {
+        logger.info(`🎯 AUTO-PAIRING: Attempting to pair ${newUserId} with ${TARGET_USER_USERNAME}`);
         const pairingId = await createPairing(newUserId, targetUser.id);
         if (pairingId) {
-          logger.info(`Successfully paired new user ${newUserId} with ${TARGET_USER_USERNAME}`);
+          logger.info(`🎉 AUTO-PAIRING SUCCESS: Paired new user ${newUserId} with ${TARGET_USER_USERNAME} (pairing: ${pairingId})`);
           return true;
+        } else {
+          logger.error(`❌ AUTO-PAIRING: Failed to create pairing between ${newUserId} and ${TARGET_USER_USERNAME}`);
         }
       } else {
-        logger.info(`${TARGET_USER_USERNAME} is already paired today, creating test account`);
+        logger.info(`⏰ AUTO-PAIRING: ${TARGET_USER_USERNAME} is already paired today, creating test account`);
       }
     } else {
-      logger.warn(`${TARGET_USER_USERNAME} not found, creating test account`);
+      logger.warn(`⚠️ AUTO-PAIRING: ${TARGET_USER_USERNAME} not found in database, creating test account`);
     }
     
     // Step 2: Create test account and pair with it
+    logger.info(`🧪 AUTO-PAIRING: Creating test account fallback`);
     const testNumber = await getNextTestAccountNumber();
+    logger.info(`🔢 AUTO-PAIRING: Next test account number: ${testNumber}`);
+    
     const testAccount = await createTestAccount(testNumber);
     
     if (testAccount) {
+      logger.info(`✅ AUTO-PAIRING: Test account created successfully: ${testAccount.username} (${testAccount.id})`);
+      
       const pairingId = await createPairing(newUserId, testAccount.id);
       if (pairingId) {
-        logger.info(`Successfully paired new user ${newUserId} with test account test_${testNumber}`);
+        logger.info(`🎉 AUTO-PAIRING SUCCESS: Paired new user ${newUserId} with test account ${testAccount.username} (pairing: ${pairingId})`);
         return true;
+      } else {
+        logger.error(`❌ AUTO-PAIRING: Failed to create pairing between ${newUserId} and test account ${testAccount.id}`);
       }
+    } else {
+      logger.error(`❌ AUTO-PAIRING: Failed to create test account test_${testNumber}`);
     }
     
-    logger.error(`Failed to auto-pair new user ${newUserId}`);
+    logger.error(`💥 AUTO-PAIRING FAILED: All pairing attempts failed for user ${newUserId}`);
     return false;
   } catch (error) {
-    logger.error('Error in autoPairNewUser:', error);
+    logger.error(`💥 AUTO-PAIRING ERROR: Critical error in autoPairNewUser for ${newUserId}:`, error);
     return false;
   }
 };

@@ -12,6 +12,8 @@ New users are automatically paired to ensure immediate app usability:
 - **Smart fallback system** - Creates test accounts automatically when needed
 - **Development friendly** - Consistent test accounts with known credentials
 - **Seamless integration** - Works during both sign-up and login flows
+- **Enhanced debugging** - Comprehensive logging with emoji indicators for easy troubleshooting
+- **Default avatars** - All test accounts get a consistent default photo URL
 
 ### 🎯 Together Mode Only Implementation
 The app has been updated to focus exclusively on collaborative photo sharing:
@@ -140,7 +142,8 @@ src/
 ├── docs/
 │   └── AUTO_PAIRING_FEATURE.md          # Auto-pairing documentation
 └── scripts/
-    └── createTestAccounts.js            # Manual test account creation
+    ├── createTestAccounts.js            # Manual test account creation
+    └── testAutoPairing.js               # Debug auto-pairing functionality
 ```
 
 ## Contributing

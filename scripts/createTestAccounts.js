@@ -19,6 +19,9 @@ admin.initializeApp({
 const auth = admin.auth();
 const db = admin.firestore();
 
+// Default photo URL for test accounts
+const DEFAULT_PHOTO_URL = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
+
 const createTestAccount = async (testNumber) => {
   try {
     const username = `test_${testNumber}`;
@@ -33,6 +36,7 @@ const createTestAccount = async (testNumber) => {
       email: email,
       password: password,
       displayName: displayName,
+      photoURL: DEFAULT_PHOTO_URL,
     });
     
     console.log(`✅ Created Firebase Auth user: ${userRecord.uid}`);
@@ -42,7 +46,7 @@ const createTestAccount = async (testNumber) => {
       email: email,
       username: username,
       displayName: displayName,
-      photoURL: null,
+      photoURL: DEFAULT_PHOTO_URL,
       isActive: true,
       flakeStreak: 0,
       maxFlakeStreak: 0,
@@ -73,6 +77,7 @@ const createTestAccount = async (testNumber) => {
     console.log(`✅ Created Firestore user document for: ${username}`);
     console.log(`📧 Email: ${email}`);
     console.log(`🔑 Password: ${password}`);
+    console.log(`📷 Photo URL: ${DEFAULT_PHOTO_URL}`);
     console.log(`🆔 User ID: ${userRecord.uid}`);
     console.log('---');
     
@@ -80,7 +85,8 @@ const createTestAccount = async (testNumber) => {
       uid: userRecord.uid,
       email: email,
       username: username,
-      password: password
+      password: password,
+      photoURL: DEFAULT_PHOTO_URL
     };
   } catch (error) {
     console.error(`❌ Error creating test account ${testNumber}:`, error.message);

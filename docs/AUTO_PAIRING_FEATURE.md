@@ -39,6 +39,7 @@ Pair new user with test account ✅
 - **Email Format**: `test_1@testuser.bnoc.stanford.edu`
 - **Password**: `password123` (consistent for all test accounts)
 - **Display Name**: `Test User 1`, `Test User 2`, etc.
+- **Photo URL**: Default avatar from Firebase Storage (consistent for all test accounts)
 
 ### Integration Points
 
@@ -111,6 +112,7 @@ To change the target user, modify this constant.
 ```typescript
 const TEST_ACCOUNT_PASSWORD = 'password123';
 const TEST_ACCOUNT_EMAIL_DOMAIN = '@testuser.bnoc.stanford.edu';
+const DEFAULT_PHOTO_URL = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 ```
 
 ## Manual Test Account Creation
