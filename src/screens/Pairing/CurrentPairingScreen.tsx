@@ -43,6 +43,7 @@ export default function CurrentPairingScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showInstructionsModal, setShowInstructionsModal] = useState(false);
   const [useRealtimeListener, setUseRealtimeListener] = useState(true);
+  const [hasHandledCompletion, setHasHandledCompletion] = useState(false);
   
   // Refs for managing Firebase listeners
   const pairingListener = React.useRef<Unsubscribe | null>(null);
@@ -97,8 +98,9 @@ export default function CurrentPairingScreen() {
             }
             
             // If pairing just completed, refresh the feed
-            if (updatedPairing.status === 'completed' && updatedPairing.user1_photoURL && updatedPairing.user2_photoURL) {
+            if (updatedPairing.status === 'completed' && updatedPairing.user1_photoURL && updatedPairing.user2_photoURL && !hasHandledCompletion) {
               console.log('DEBUG: CurrentPairingScreen - Pairing completed via real-time update, refreshing feed');
+              setHasHandledCompletion(true);
               try {
                 await refreshFeed();
               } catch (error) {
@@ -180,14 +182,20 @@ export default function CurrentPairingScreen() {
       loadPartnerData();
       
       // If pairing just completed, refresh the feed
-      if (currentPairing.status === 'completed') {
+      if (currentPairing.status === 'completed' && !hasHandledCompletion) {
         console.log('DEBUG: Pairing completed, refreshing feed');
+        setHasHandledCompletion(true);
         refreshFeed().catch(error => {
           console.error('Failed to refresh feed after pairing completion:', error);
         });
       }
     }
   }, [currentPairing?.id, currentPairing?.status, currentPairing?.user1_photoURL, currentPairing?.user2_photoURL, useRealtimeListener]);
+  
+  // Reset completion tracking when currentPairing changes
+  useEffect(() => {
+    setHasHandledCompletion(false);
+  }, [currentPairing?.id]);
   
   // Handle refresh (pull-to-refresh functionality like profile screen)
   const handleRefresh = useCallback(async () => {

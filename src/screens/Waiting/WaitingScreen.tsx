@@ -50,12 +50,18 @@ const WaitingScreen: React.FC = () => {
   const [partner, setPartner] = useState<any | null>(null);
   const [timeToNextPairing, setTimeToNextPairing] = useState<string>('');
   const [pairingData, setPairingData] = useState<any>(null);
+  const [hasHandledCompletion, setHasHandledCompletion] = useState(false);
   
   // Animations
   const pulseAnimation = new Animated.Value(1);
   
   // Get partner user id
   const partnerId = currentPairing?.users.find(id => id !== user?.id);
+  
+  // Reset completion tracking when pairingId changes
+  useEffect(() => {
+    setHasHandledCompletion(false);
+  }, [pairingId]);
   
   // Pulse animation for the waiting indicator
   useEffect(() => {
@@ -96,7 +102,7 @@ const WaitingScreen: React.FC = () => {
           const bothPhotosSubmitted = pairing.user1_photoURL && pairing.user2_photoURL;
           const isPairingCompleted = pairing.status === 'completed';
           
-          if (bothPhotosSubmitted && isPairingCompleted) {
+          if (bothPhotosSubmitted && isPairingCompleted && !hasHandledCompletion) {
             console.log('DEBUG: WaitingScreen - Both photos submitted, redirecting to feed');
             
             // Show success message
@@ -117,6 +123,7 @@ const WaitingScreen: React.FC = () => {
                         }
                       });
                     });
+                    setHasHandledCompletion(true);
                   }
                 }
               ]
@@ -133,7 +140,7 @@ const WaitingScreen: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [pairingId, navigation, refreshFeed]);
+  }, [pairingId, navigation, refreshFeed, hasHandledCompletion]);
   
   // Update time remaining
   useEffect(() => {

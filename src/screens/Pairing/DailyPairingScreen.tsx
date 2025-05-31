@@ -48,6 +48,7 @@ const DailyPairingScreen: React.FC = () => {
   const [localLoading, setLocalLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [useRealtimeListener, setUseRealtimeListener] = useState(true);
+  const [hasHandledCompletion, setHasHandledCompletion] = useState(false);
   
   // Animation for Let's Go button
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -77,6 +78,11 @@ const DailyPairingScreen: React.FC = () => {
     return isUser1 ? currentPairing.user2_id : currentPairing.user1_id;
   }, [currentPairing, user, isUser1]);
 
+  // Reset completion tracking when currentPairing changes
+  useEffect(() => {
+    setHasHandledCompletion(false);
+  }, [currentPairing?.id]);
+  
   // Cleanup function for listeners
   const cleanupListeners = useCallback(() => {
     if (pairingListener.current) {
