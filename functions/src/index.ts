@@ -75,7 +75,7 @@ export const pairUsers = onSchedule({
     // Get active users
     const activeUsersSnapshot = await db.collection('users')
       .where('isActive', '==', true)
-      .where('lastActive', '>', admin.firestore.Timestamp.fromDate(
+      .where('lastActive', '>', Timestamp.fromDate(
         new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
       ))
       .where('flakeStreak', '<', 5) // Skip users with high flake streak
@@ -116,8 +116,8 @@ export const pairUsers = onSchedule({
       
       batch.set(pairingRef, {
         id: pairingRef.id,
-        date: admin.firestore.Timestamp.now(),
-        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        date: Timestamp.now(),
+        expiresAt: Timestamp.fromDate(expiresAt),
         users: [pairing.user1.id, pairing.user2.id],
         status: 'pending',
         isPrivate: false,
@@ -130,11 +130,11 @@ export const pairUsers = onSchedule({
       // Also add to each user's pairings subcollection for faster queries
       batch.set(
         db.collection('users').doc(pairing.user1.id).collection('pairings').doc(pairingRef.id),
-        { pairingId: pairingRef.id, date: admin.firestore.Timestamp.now() }
+        { pairingId: pairingRef.id, date: Timestamp.now() }
       );
       batch.set(
         db.collection('users').doc(pairing.user2.id).collection('pairings').doc(pairingRef.id),
-        { pairingId: pairingRef.id, date: admin.firestore.Timestamp.now() }
+        { pairingId: pairingRef.id, date: Timestamp.now() }
       );
     }
     
@@ -143,7 +143,7 @@ export const pairUsers = onSchedule({
       // Flag user as on waitlist today
       batch.update(db.collection('users').doc(waitlistUser.id), {
         waitlistedToday: true,
-        waitlistedAt: admin.firestore.Timestamp.now(),
+        waitlistedAt: Timestamp.now(),
       });
     }
     
@@ -179,7 +179,7 @@ export const markExpiredPairingsAsFlaked = onSchedule({
     
     // Get all pending pairings from today
     const pendingPairingsSnapshot = await db.collection('pairings')
-      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('date', '>=', Timestamp.fromDate(today))
       .where('status', '==', 'pending')
       .get();
       
@@ -193,7 +193,7 @@ export const markExpiredPairingsAsFlaked = onSchedule({
       // Mark pairing as flaked
       batch.update(pairingRef, {
         status: 'flaked',
-        updatedAt: admin.firestore.Timestamp.now()
+        updatedAt: Timestamp.now()
       });
       
       // Increment flake streak for each user
@@ -209,7 +209,7 @@ export const markExpiredPairingsAsFlaked = onSchedule({
           batch.update(userRef, {
             flakeStreak: newFlakeStreak,
             maxFlakeStreak: maxFlakeStreak,
-            updatedAt: admin.firestore.Timestamp.now()
+            updatedAt: Timestamp.now()
           });
         }
       }
@@ -242,7 +242,7 @@ export const sendPairingNotifications = onSchedule({
     today.setHours(0, 0, 0, 0);
     
     const pairingsSnapshot = await db.collection('pairings')
-      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('date', '>=', Timestamp.fromDate(today))
       .where('status', '==', 'pending')
       .get();
     
@@ -323,7 +323,7 @@ export const sendReminderNotifications = onSchedule({
     today.setHours(0, 0, 0, 0);
     
     const pendingPairingsSnapshot = await db.collection('pairings')
-      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('date', '>=', Timestamp.fromDate(today))
       .where('status', '==', 'pending')
       .get();
     
@@ -404,7 +404,7 @@ export const sendFinalReminderNotifications = onSchedule({
     today.setHours(0, 0, 0, 0);
     
     const pendingPairingsSnapshot = await db.collection('pairings')
-      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+      .where('date', '>=', Timestamp.fromDate(today))
       .where('status', '==', 'pending')
       .get();
     
@@ -564,7 +564,7 @@ const shuffleArray = <T>(array: T[]): T[] => {
  */
 const getPairingHistory = async (days: number): Promise<PairingHistory[]> => {
   const db = admin.firestore();
-  const cutoffDate = admin.firestore.Timestamp.fromDate(
+  const cutoffDate = Timestamp.fromDate(
     new Date(Date.now() - days * 24 * 60 * 60 * 1000)
   );
   

@@ -22,6 +22,8 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { collection, query, where, orderBy, limit, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { COLORS, SHADOWS, BORDER_RADIUS, FONTS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { Pairing, User } from '../../types';
@@ -29,10 +31,12 @@ import PostCard from '../../components/feed/PostCard';
 import EmptyFeed from '../../components/feed/EmptyFeed';
 import { useAuth } from '../../context/AuthContext';
 import { usePairing } from '../../context/PairingContext';
+import { useFeed } from '../../context/FeedContext';
 import firebaseService from '../../services/firebase';
 import { RouteProp } from '@react-navigation/native';
 import { MainTabParamList, MainStackParamList } from '../../types/navigation';
 import { StackNavigationProp } from '@react-navigation/stack';
+import logger from '../../utils/logger';
 
 // Define typed navigation prop
 type FeedScreenNavigationProp = StackNavigationProp<MainStackParamList>;
@@ -49,19 +53,23 @@ const FeedScreen: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [useRealtimeListener, setUseRealtimeListener] = useState(true);
+  const [isSettingUpListener, setIsSettingUpListener] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
   
-  // FIXED: Removed conflicting fade animation that was causing bounce issues
-  // const fadeAnim = useRef(new Animated.Value(0)).current;
   const lastVisible = useRef<any>(null);
   const flatListRef = useRef<FlatList>(null);
+  const feedListener = useRef<Unsubscribe | null>(null);
   
-  // Get auth context
+  // Get contexts
   const { user } = useAuth();
   const { currentPairing, loadCurrentPairing } = usePairing();
+  const { refreshFeed: refreshFeedContext } = useFeed();
+  
   const navigation = useNavigation<FeedScreenNavigationProp>();
   const route = useRoute<RouteProp<MainTabParamList, 'Feed'>>();
   const scrollToPairingId = route.params?.scrollToPairingId;
-
+  
   // ADDED: Check if the user has already submitted a photo for the current pairing
   const hasUserSubmittedPhoto = React.useMemo(() => {
     if (!currentPairing || !user) return false;
@@ -129,7 +137,24 @@ const FeedScreen: React.FC = () => {
       if (refresh) {
         setPairings(newPairings);
       } else {
-        setPairings(prev => [...prev, ...newPairings]);
+        // Add deduplication when appending new pairings
+        setPairings(prevPairings => {
+          const combined = [...prevPairings, ...newPairings];
+          // Deduplicate by ID
+          const uniquePairings = combined.reduce((acc, pairing) => {
+            const existingIndex = acc.findIndex(p => p.id === pairing.id);
+            if (existingIndex >= 0) {
+              // Replace existing with newer data
+              acc[existingIndex] = pairing;
+            } else {
+              acc.push(pairing);
+            }
+            return acc;
+          }, [] as Pairing[]);
+          
+          console.log('DEBUG: FeedScreen - Deduplicated loadMore pairings:', uniquePairings.length);
+          return uniquePairings;
+        });
       }
       
       // Update pagination state
@@ -160,7 +185,7 @@ const FeedScreen: React.FC = () => {
       });
       
       // Update users state
-      setUsers(prev => refresh ? newUsers : { ...prev, ...newUsers });
+      setUsers(prevUsers => refresh ? newUsers : { ...prevUsers, ...newUsers });
     } catch (e) {
       console.error('Error loading feed:', e);
       setError('Failed to load feed. Pull down to try again.');
@@ -171,12 +196,202 @@ const FeedScreen: React.FC = () => {
     }
   }, [user?.id]); // Dependency on user.id
 
+  /**
+   * Set up real-time listener for feed updates
+   */
+  const setupFeedListener = useCallback(async () => {
+    if (!user?.id) return;
+    
+    // Prevent multiple simultaneous setups
+    if (isSettingUpListener) {
+      console.log('DEBUG: FeedScreen - Listener setup already in progress');
+      return;
+    }
+    
+    setIsSettingUpListener(true);
+    
+    // Clean up existing listener
+    if (feedListener.current) {
+      console.log('DEBUG: FeedScreen - Cleaning up existing feed listener');
+      feedListener.current();
+      feedListener.current = null;
+    }
+    
+    try {
+      console.log('DEBUG: FeedScreen - Setting up real-time feed listener');
+      
+      // Get user connections for feed filtering
+      const userData = await firebaseService.getUserById(user.id);
+      const connections = userData?.connections || [];
+      const usersToInclude = [user.id, ...connections.slice(0, 30)]; // Limit to avoid query complexity
+      
+      if (usersToInclude.length > 1) {
+        // Set up real-time listener for completed pairings
+        const pairingsQuery = query(
+          collection(db, 'pairings'),
+          where('status', '==', 'completed'),
+          where('users', 'array-contains-any', usersToInclude.slice(0, 10)), // Firebase limit
+          orderBy('completedAt', 'desc'),
+          limit(20)
+        );
+        
+        const unsubscribe = onSnapshot(pairingsQuery, async (snapshot) => {
+          console.log('DEBUG: FeedScreen - Real-time update received, docs:', snapshot.docs.length);
+          
+          if (!snapshot.empty) {
+            const newPairings = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })) as Pairing[];
+            
+            // Deduplicate pairings to prevent duplicate keys
+            const uniquePairings = newPairings.reduce((acc, pairing) => {
+              const existingIndex = acc.findIndex(p => p.id === pairing.id);
+              if (existingIndex >= 0) {
+                // Replace existing with newer data
+                acc[existingIndex] = pairing;
+              } else {
+                acc.push(pairing);
+              }
+              return acc;
+            }, [] as Pairing[]);
+            
+            console.log('DEBUG: FeedScreen - Setting deduplicated pairings from real-time update:', uniquePairings.length);
+            setPairings(uniquePairings);
+            setLoading(false); // Ensure loading state is cleared
+            
+            // Fetch user data for displayed pairings
+            const userIds = new Set<string>();
+            uniquePairings.forEach(pairing => {
+              if (pairing.users) {
+                pairing.users.forEach(userId => userIds.add(userId));
+              }
+            });
+            
+            // Get all users in parallel
+            const userPromises = Array.from(userIds).map(userId => 
+              firebaseService.getUserById(userId)
+            );
+            
+            const fetchedUsers = await Promise.all(userPromises);
+            
+            // Create users object
+            const newUsers: Record<string, User> = {};
+            fetchedUsers.forEach(user => {
+              if (user) {
+                newUsers[user.id] = user;
+              }
+            });
+            
+            // Update users state
+            setUsers(newUsers);
+            setError(null);
+          } else {
+            // Handle empty state
+            setPairings([]);
+            setUsers({});
+            setLoading(false);
+          }
+        }, (error) => {
+          console.error('DEBUG: FeedScreen - Real-time listener error:', error);
+          logger.error('FeedScreen real-time listener error', error);
+          // Fall back to manual loading
+          setUseRealtimeListener(false);
+          // Call loadFeed directly to avoid dependency issues
+          if (user?.id) {
+            firebaseService.getFeed(user.id, 10, null)
+              .then(result => {
+                setPairings(result.pairings);
+                setLoading(false);
+              })
+              .catch(err => {
+                console.error('Fallback load feed error:', err);
+                setError('Failed to load feed. Pull down to try again.');
+                setLoading(false);
+              });
+          }
+        });
+        
+        feedListener.current = unsubscribe;
+        console.log('DEBUG: FeedScreen - Real-time listener set up successfully');
+      } else {
+        console.log('DEBUG: FeedScreen - No connections, using manual load');
+        // No connections, fall back to manual loading
+        if (user?.id) {
+          firebaseService.getFeed(user.id, 10, null)
+            .then(result => {
+              setPairings(result.pairings);
+              setLoading(false);
+            })
+            .catch(err => {
+              console.error('No connections load feed error:', err);
+              setError('Failed to load feed. Pull down to try again.');
+              setLoading(false);
+            });
+        }
+      }
+    } catch (error) {
+      console.error('Error setting up feed listener:', error);
+      logger.error('Error setting up feed listener', error);
+      // Fall back to manual loading
+      if (user?.id) {
+        firebaseService.getFeed(user.id, 10, null)
+          .then(result => {
+            setPairings(result.pairings);
+            setLoading(false);
+          })
+          .catch(err => {
+            console.error('Catch block load feed error:', err);
+            setError('Failed to load feed. Pull down to try again.');
+            setLoading(false);
+          });
+      }
+    } finally {
+      setIsSettingUpListener(false);
+    }
+  }, [user?.id, isSettingUpListener]); // Removed loadFeed to prevent recreations
+
+  /**
+   * Clean up feed listener
+   */
+  const cleanupFeedListener = () => {
+    if (feedListener.current) {
+      console.log('DEBUG: FeedScreen - Cleaning up feed listener');
+      feedListener.current();
+      feedListener.current = null;
+    }
+  };
+
   // Data loading and user authentication effect
   useEffect(() => {
     if (user?.id) {
-      loadFeed(true);
-    } 
-  }, [user?.id, loadFeed, user?.connections?.length]); // Removed loadCurrentPairing dependency
+      // Only clean up and restart if this is not the initial load or if the mode has actually changed
+      if (hasInitialized) {
+        console.log('DEBUG: FeedScreen - Mode or connections changed, restarting...');
+        cleanupFeedListener();
+      }
+      
+      if (useRealtimeListener) {
+        // Use real-time listener for automatic updates
+        console.log('DEBUG: FeedScreen - Switching to real-time mode');
+        setupFeedListener();
+      } else {
+        // Use manual loading
+        console.log('DEBUG: FeedScreen - Switching to manual mode');
+        loadFeed(true);
+      }
+      
+      // Mark as initialized after first run
+      if (!hasInitialized) {
+        setHasInitialized(true);
+      }
+    }
+    
+    // Cleanup function
+    return () => {
+      cleanupFeedListener();
+    };
+  }, [user?.id, user?.connections?.length, useRealtimeListener]); // Removed setupFeedListener and cleanupFeedListener to prevent infinite loop
   
   // Separate effect for loading current pairing only once
   useEffect(() => {
@@ -223,11 +438,33 @@ const FeedScreen: React.FC = () => {
   /**
    * Pull-to-refresh handler
    */
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     if (!refreshing) {
-      loadFeed(true);
+      console.log('DEBUG: FeedScreen handleRefresh triggered');
+      
+      if (useRealtimeListener) {
+        // In real-time mode, reset the listener to get fresh data
+        // Clean up existing listener first
+        if (feedListener.current) {
+          feedListener.current();
+          feedListener.current = null;
+        }
+        // Set up fresh listener
+        await setupFeedListener();
+      } else {
+        // In manual mode, use regular refresh
+        await loadFeed(true);
+      }
+      
+      // Always refresh context and pairing data
+      await Promise.all([
+        refreshFeedContext(),
+        loadCurrentPairing() // Also refresh current pairing to get latest status
+      ]);
+      
+      console.log('DEBUG: FeedScreen refresh complete');
     }
-  }, [refreshing, loadFeed]);
+  }, [refreshing, useRealtimeListener, refreshFeedContext, loadCurrentPairing]); // Removed setupFeedListener and loadFeed to prevent recreations
   
   /**
    * Load more data when reaching the end of the list
@@ -447,13 +684,31 @@ const FeedScreen: React.FC = () => {
           {/* Center: BNOC Logo */}
           <Text style={styles.headerTitle}>BNOC</Text>
 
-          {/* Right: User Profile Image */}
-          <TouchableOpacity style={styles.headerButton} onPress={navigateToProfile}>
-            <Image
-              source={{ uri: user?.photoURL || defaultAvatar }}
-              style={styles.headerAvatar}
-            />
-          </TouchableOpacity>
+          {/* Right Side: Toggle + Profile */}
+          <View style={styles.headerRightSection}>
+            {/* Real-time Toggle */}
+            <TouchableOpacity 
+              style={[styles.headerButton, styles.toggleButton]} 
+              onPress={() => {
+                console.log('DEBUG: Toggling real-time listener mode');
+                setUseRealtimeListener(!useRealtimeListener);
+              }}
+            >
+              <Ionicons 
+                name={useRealtimeListener ? "flash" : "flash-off"} 
+                size={20} 
+                color={useRealtimeListener ? COLORS.primary : COLORS.textSecondary} 
+              />
+            </TouchableOpacity>
+            
+            {/* User Profile Image */}
+            <TouchableOpacity style={styles.headerButton} onPress={navigateToProfile}>
+              <Image
+                source={{ uri: user?.photoURL || defaultAvatar }}
+                style={styles.headerAvatar}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -470,6 +725,26 @@ const FeedScreen: React.FC = () => {
   
   // Determine if we should show the retake photo FAB
   const shouldShowRetakeFab = currentPairing != null && hasUserSubmittedPhoto && !isPairingExpired;
+
+  // Component unmount cleanup
+  useEffect(() => {
+    return () => {
+      console.log('DEBUG: FeedScreen - Component unmounting, cleaning up');
+      cleanupFeedListener();
+    };
+  }, []);
+
+  // Debug effect to track pairings state changes
+  useEffect(() => {
+    console.log('DEBUG: FeedScreen - Pairings state updated, count:', pairings.length);
+    if (pairings.length > 0) {
+      const ids = pairings.map(p => p.id);
+      const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+      if (duplicateIds.length > 0) {
+        console.error('DEBUG: FeedScreen - DUPLICATE IDs DETECTED:', duplicateIds);
+      }
+    }
+  }, [pairings]);
 
   return (
     <View style={styles.container}>
@@ -604,6 +879,13 @@ const styles = StyleSheet.create({
   retakeFab: {
     bottom: 100,
     right: 20,
+  },
+  headerRightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toggleButton: {
+    padding: 5,
   },
 });
 

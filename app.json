@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Daily Meetup Selfie",
+    "name": "BNOC",
     "slug": "bnoc-react",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,8 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.bnoc.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow Daily Meetup Selfie to access your camera to take selfies with friends.",
-        "NSMicrophoneUsageDescription": "Allow Daily Meetup Selfie to access your microphone for video calls.",
+        "NSCameraUsageDescription": "Allow BNOC to access your camera to take selfies with friends.",
+        "NSMicrophoneUsageDescription": "Allow BNOC to access your microphone for video calls.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -39,13 +39,13 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Daily Meetup Selfie to access your camera to take selfies with friends."
+          "cameraPermission": "Allow BNOC to access your camera to take selfies with friends."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Daily Meetup Selfie to access your photos to select profile images."
+          "photosPermission": "Allow BNOC to access your photos to select profile images."
         }
       ],
       [
@@ -61,7 +61,7 @@
       "expo-font",
       "expo-web-browser"
     ],
-    "scheme": "dailymeetup",
+    "scheme": "bnoc",
     "primaryColor": "#990000",
     "extra": {
       "eas": {

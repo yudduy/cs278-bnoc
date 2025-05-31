@@ -22,6 +22,7 @@ import ChatScreen from '../screens/Chat/ChatScreen';
 import FindFriendsScreen from '../screens/Feed/FindFriendsScreen';
 import SettingsScreen from '../screens/Profile/SettingsScreen';
 import BlockedUsersScreen from '../screens/Profile/Settings/BlockedUsersScreen';
+import WaitingScreen from '../screens/Waiting/WaitingScreen';
 
 // Import the pairing context hook
 import { usePairing } from '../context/PairingContext';
@@ -133,6 +134,7 @@ const MainNavigator = () => {
       <Stack.Screen name="FindFriends" component={FindFriendsScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+      <Stack.Screen name="Waiting" component={WaitingScreen} />
     </Stack.Navigator>
   );
 };

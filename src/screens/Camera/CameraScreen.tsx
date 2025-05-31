@@ -81,10 +81,10 @@ export default function CameraScreen() {
       setErrorMessage(null);
 
       try {
-        // Set photo mode in pairing if provided and not already set
-        if (photoMode && currentUserId) {
-          console.log('Setting photo mode:', photoMode);
-          await firebaseService.updatePairingPhotoMode(pairingId, photoMode, currentUserId);
+        // Set photo mode to 'together' in pairing (removing individual mode)
+        if (currentUserId) {
+          console.log('Setting photo mode to together');
+          await firebaseService.updatePairingPhotoMode(pairingId, 'together', currentUserId);
         }
         
         console.log('Uploading image to Firebase Storage...');
@@ -102,10 +102,17 @@ export default function CameraScreen() {
         console.log('Image uploaded successfully:', downloadURL);
         await firebaseService.updatePairingWithPhoto(pairingId, currentUserId, downloadURL, isPrivate);
         
-        Alert.alert('Success', 'Photo uploaded and pairing updated!');
-        navigation.navigate('TabNavigator', { 
-          screen: 'Today'
+        Alert.alert('Success', 'Photo uploaded successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate to waiting screen instead of Today tab
+              navigation.navigate('Waiting', {
+                pairingId: pairingId
         });
+            }
+          }
+        ]);
 
       } catch (error: any) {
         console.error('Pairing photo upload or Firestore update failed:', error);

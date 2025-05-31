@@ -33,58 +33,158 @@ export const getCurrentPairing = async (userId: string): Promise<Pairing | null>
       hasLoggedCurrentPairingDebug = true;
     }
     
-    // Query pairings for today where the user is included in the users array
-    const pairingsQuery = query(
-      collection(db, 'pairings'),
-      where('users', 'array-contains', userId),
-      where('date', '>=', today),
-      orderBy('date', 'desc'),
-      limit(1)
-    );
+    // EMERGENCY FALLBACK: Use simple query that works with existing indexes
+    // This ensures the demo works while new indexes are building
     
-    const snapshot = await getDocs(pairingsQuery);
+    let snapshot;
+    let pairings: any[] = [];
     
-    // If no pairings found, return null
-    if (snapshot.empty) {
+    try {
+      // TRY: Optimized query with lastUpdatedAt (if index is ready)
+      const pairingsQuery = query(
+        collection(db, 'pairings'),
+        where('users', 'array-contains', userId),
+        where('date', '>=', today),
+        orderBy('lastUpdatedAt', 'desc'),
+        limit(3)
+      );
+      
+      snapshot = await getDocs(pairingsQuery);
+      
+      if (!snapshot.empty) {
+        pairings = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Pairing));
+        logger.debug(`Found ${pairings.length} pairings using lastUpdatedAt query`);
+      }
+    } catch (indexError) {
+      logger.warn('lastUpdatedAt index not ready, falling back to basic query');
+      
+      // FALLBACK 1: Try completedAt query for completed pairings
+      try {
+        const completedQuery = query(
+          collection(db, 'pairings'),
+          where('users', 'array-contains', userId),
+          where('date', '>=', today),
+          where('status', '==', 'completed'),
+          orderBy('completedAt', 'desc'),
+          limit(2)
+        );
+        
+        const completedSnapshot = await getDocs(completedQuery);
+        
+        if (!completedSnapshot.empty) {
+          const completedPairings = completedSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          } as Pairing));
+          pairings.push(...completedPairings);
+          logger.debug(`Found ${completedPairings.length} completed pairings`);
+        }
+      } catch (completedError) {
+        logger.warn('completedAt index not ready either');
+      }
+      
+      // FALLBACK 2: Use basic date query (always works)
+      try {
+        const basicQuery = query(
+          collection(db, 'pairings'),
+          where('users', 'array-contains', userId),
+          where('date', '>=', today),
+          orderBy('date', 'desc'),
+          limit(5) // Get more to find the best one
+        );
+        
+        const basicSnapshot = await getDocs(basicQuery);
+        
+        if (!basicSnapshot.empty) {
+          const basicPairings = basicSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          } as Pairing));
+          
+          // Add to pairings if not already included
+          for (const pairing of basicPairings) {
+            if (!pairings.find(p => p.id === pairing.id)) {
+              pairings.push(pairing);
+            }
+          }
+          logger.debug(`Found ${basicPairings.length} pairings using basic date query`);
+        }
+      } catch (basicError) {
+        logger.error('Even basic query failed:', basicError);
+      }
+    }
+    
+    if (pairings.length === 0) {
       if (!hasLoggedNoPairingToday) {
-        logger.info(`No active pairing found for user ${userId}`);
+        logger.info(`No pairing found for user ${userId} today`);
         hasLoggedNoPairingToday = true;
       }
       return null;
     }
     
-    // Reset the flag since we found a pairing
+    // Reset the flag since we found pairings
     hasLoggedNoPairingToday = false;
     
-    // Get the first (and should be only) pairing
-    const pairingDoc = snapshot.docs[0];
-    const pairingData = pairingDoc.data();
+    // Smart prioritization among all found pairings
+    let bestPairing: Pairing | null = null;
     
-    // Validate that the pairing data has the required fields
-    if (!pairingData || !pairingData.users || !Array.isArray(pairingData.users)) {
-      logger.error(`Invalid pairing data for pairing ${pairingDoc.id}: ${JSON.stringify(pairingData)}`);
+    // Priority 1: Active pairings (pending, user1_submitted, user2_submitted)
+    const activePairing = pairings.find(p => 
+      ['pending', 'user1_submitted', 'user2_submitted'].includes(p.status) &&
+      p.users && Array.isArray(p.users) && p.users.includes(userId)
+    );
+    
+    if (activePairing) {
+      bestPairing = activePairing;
+      logger.debug(`Found active pairing for user ${userId}: ${bestPairing?.id} (status: ${bestPairing?.status})`);
+    } else {
+      // Priority 2: Most recently completed pairing
+      const completedPairings = pairings.filter(p => 
+        p.status === 'completed' &&
+        p.users && Array.isArray(p.users) && p.users.includes(userId)
+      );
+      
+      if (completedPairings.length > 0) {
+        // Sort by completedAt if available, otherwise by lastUpdatedAt, otherwise by date
+        completedPairings.sort((a, b) => {
+          const aTime = a.completedAt?.toDate?.() || a.lastUpdatedAt?.toDate?.() || a.date?.toDate?.() || new Date(0);
+          const bTime = b.completedAt?.toDate?.() || b.lastUpdatedAt?.toDate?.() || b.date?.toDate?.() || new Date(0);
+          return bTime.getTime() - aTime.getTime();
+        });
+        
+        bestPairing = completedPairings[0];
+        logger.debug(`Found completed pairing for user ${userId}: ${bestPairing?.id}`);
+      } else {
+        // Priority 3: Any valid pairing
+        const validPairing = pairings.find(p => 
+          p.users && Array.isArray(p.users) && p.users.includes(userId)
+        );
+        
+        if (validPairing) {
+          bestPairing = validPairing;
+          logger.debug(`Found fallback pairing for user ${userId}: ${bestPairing?.id} (status: ${bestPairing?.status})`);
+        }
+      }
+    }
+    
+    if (!bestPairing) {
+      logger.error(`No valid pairing found for user ${userId} among ${pairings.length} results`);
       return null;
     }
     
-    // Additional validation to ensure the user is part of this pairing
-    if (!pairingData.users.includes(userId)) {
-      logger.error(`User ${userId} not found in pairing ${pairingDoc.id} users array:`, pairingData.users);
+    // Final validation
+    if (!bestPairing.users || !Array.isArray(bestPairing.users) || !bestPairing.users.includes(userId)) {
+      logger.error(`User ${userId} not found in pairing ${bestPairing.id} users array:`, bestPairing.users);
       return null;
     }
     
-    // Ensure user is properly assigned as either user1 or user2
-    if (pairingData.user1_id !== userId && pairingData.user2_id !== userId) {
-      logger.error(`User ${userId} found in users array but not assigned as user1_id or user2_id in pairing ${pairingDoc.id}`);
-      return null;
-    }
+    return bestPairing as Pairing;
     
-    // Return the pairing with its ID
-    return {
-      id: pairingDoc.id,
-      ...pairingData
-    } as Pairing;
   } catch (error) {
-    logger.error('Error getting current pairing:', error);
+    logger.error(`Error getting current pairing for user ${userId}:`, error);
     return null;
   }
 };
@@ -334,18 +434,8 @@ export const updatePairingWithPhoto = async (
     }
 
     // Check photo mode to determine completion logic
-    const photoMode = pairingData.photoMode;
+    // Only supporting together mode now - both users must submit
     
-    if (photoMode === 'individual') {
-      // INDIVIDUAL MODE: Complete immediately when first user submits
-      logger.info(`Individual mode: User ${userId} submitted photo for pairing ${pairingId}. Marking as completed.`);
-      updateData.status = 'completed';
-      updateData.completedAt = Timestamp.now();
-      
-      // For individual mode, DO NOT duplicate photos - just set the user's photo
-      // The display logic will handle showing the single photo correctly
-    } else {
-      // TOGETHER MODE or NO MODE SET: Require both users to submit
       // Check if both users have now submitted
       const user1Submitted = 
         (pairingData.user1_id === userId) || 
@@ -355,7 +445,7 @@ export const updatePairingWithPhoto = async (
         (pairingData.user2_id === userId) || 
         (!!pairingData.user2_photoURL && pairingData.user2_submittedAt !== null);
         
-      // If this submission completes the pairing
+    // If this submission completes the pairing (both users have submitted)
       if (user1Submitted && user2Submitted) {
         logger.info(`Together mode: Both users have submitted photos for pairing ${pairingId}. Marking as completed.`);
         updateData.status = 'completed';
@@ -363,7 +453,6 @@ export const updatePairingWithPhoto = async (
       } else {
         updateData.status = newStatus;
         logger.info(`Together mode: User ${userId} submitted photo for pairing ${pairingId}. Status: ${newStatus}`);
-      }
     }
 
     await updateDoc(pairingRef, updateData);

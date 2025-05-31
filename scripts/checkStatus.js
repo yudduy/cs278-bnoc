@@ -26,8 +26,10 @@ async function checkDatabaseStatus() {
     console.log(`   Total users: ${usersSnapshot.size}`);
     
     const activeUsers = [];
+    const userMap = {}; // Create a map for user lookups
     usersSnapshot.forEach(doc => {
       const userData = doc.data();
+      userMap[doc.id] = userData; // Store in map for later use
       if (userData.isActive) {
         activeUsers.push({
           id: doc.id,
@@ -43,7 +45,7 @@ async function checkDatabaseStatus() {
       console.log(`     - ${user.username} (${user.email}) - Last active: ${user.lastActive}`);
     });
     
-    // Check Today's Pairings
+    // Check Today's Pairings with enhanced debugging
     console.log('\n🤝 TODAY\'S PAIRINGS:');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -57,6 +59,7 @@ async function checkDatabaseStatus() {
     if (todaysPairings.size > 0) {
       const pairingsByStatus = {};
       const pairingDetails = [];
+      const invalidPairings = [];
       
       todaysPairings.forEach(doc => {
         const pairing = doc.data();
@@ -67,13 +70,49 @@ async function checkDatabaseStatus() {
         }
         pairingsByStatus[status]++;
         
-        pairingDetails.push({
+        // Enhanced pairing debugging
+        const user1_id = pairing.user1_id;
+        const user2_id = pairing.user2_id;
+        const users_array = pairing.users;
+        
+        // Check data integrity
+        let dataIntegrityIssues = [];
+        if (!user1_id) dataIntegrityIssues.push('missing user1_id');
+        if (!user2_id) dataIntegrityIssues.push('missing user2_id');
+        if (!users_array || !Array.isArray(users_array)) dataIntegrityIssues.push('missing/invalid users array');
+        if (users_array && Array.isArray(users_array) && users_array.length !== 2) dataIntegrityIssues.push(`users array length: ${users_array.length}`);
+        
+        // Check if users exist
+        const user1_exists = user1_id && userMap[user1_id];
+        const user2_exists = user2_id && userMap[user2_id];
+        if (user1_id && !user1_exists) dataIntegrityIssues.push('user1 does not exist');
+        if (user2_id && !user2_exists) dataIntegrityIssues.push('user2 does not exist');
+        
+        const user1_username = user1_exists ? (userMap[user1_id].username || userMap[user1_id].displayName || 'unknown') : 'missing';
+        const user2_username = user2_exists ? (userMap[user2_id].username || userMap[user2_id].displayName || 'unknown') : 'missing';
+        
+        const pairingDetail = {
           id: doc.id.substring(0, 8) + '...',
-          user1: pairing.user1_id,
-          user2: pairing.user2_id,
+          user1_id: user1_id || 'undefined',
+          user2_id: user2_id || 'undefined',
+          user1_username,
+          user2_username,
+          users_array: users_array || 'undefined',
           status: pairing.status,
-          expires: pairing.expiresAt?.toDate?.() || 'Unknown'
-        });
+          expires: pairing.expiresAt?.toDate?.() || 'Unknown',
+          photoMode: pairing.photoMode || 'not set',
+          hasPhotos: {
+            user1: !!pairing.user1_photoURL,
+            user2: !!pairing.user2_photoURL
+          },
+          dataIntegrityIssues
+        };
+        
+        if (dataIntegrityIssues.length > 0) {
+          invalidPairings.push(pairingDetail);
+        }
+        
+        pairingDetails.push(pairingDetail);
       });
       
       console.log('   Status breakdown:');
@@ -81,13 +120,58 @@ async function checkDatabaseStatus() {
         console.log(`     - ${status}: ${count}`);
       });
       
-      console.log('\n   Pairing details:');
+      console.log('\n   📊 DETAILED PAIRING ANALYSIS:');
       pairingDetails.forEach(p => {
-        console.log(`     ${p.user1} + ${p.user2} | ${p.status} | Expires: ${p.expires}`);
+        console.log(`     ${p.id}: ${p.user1_username} + ${p.user2_username} | ${p.status} | Mode: ${p.photoMode}`);
+        console.log(`       Photos: U1=${p.hasPhotos.user1}, U2=${p.hasPhotos.user2} | Expires: ${p.expires}`);
+        if (p.dataIntegrityIssues.length > 0) {
+          console.log(`       ⚠️  Issues: ${p.dataIntegrityIssues.join(', ')}`);
+        }
       });
+      
+      if (invalidPairings.length > 0) {
+        console.log(`\n   ❌ FOUND ${invalidPairings.length} PAIRINGS WITH DATA INTEGRITY ISSUES:`);
+        invalidPairings.forEach(p => {
+          console.log(`     ${p.id}: ${p.dataIntegrityIssues.join(', ')}`);
+          console.log(`       Raw data: user1_id=${p.user1_id}, user2_id=${p.user2_id}, users=${JSON.stringify(p.users_array)}`);
+        });
+      }
+      
     } else {
       console.log('   ❌ No pairings found for today!');
       console.log('   💡 Run "node manualPairing.js" to create test pairings');
+    }
+    
+    // Test getCurrentPairing function for each active user
+    console.log('\n🔍 TESTING getCurrentPairing FUNCTION:');
+    for (const user of activeUsers) {
+      console.log(`   Testing getCurrentPairing for user: ${user.username} (${user.id})`);
+      
+      // Simulate the getCurrentPairing query
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const userPairingsQuery = await db.collection('pairings')
+        .where('users', 'array-contains', user.id)
+        .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+        .orderBy('date', 'desc')
+        .limit(1)
+        .get();
+      
+      if (!userPairingsQuery.empty) {
+        const pairingDoc = userPairingsQuery.docs[0];
+        const pairingData = pairingDoc.data();
+        console.log(`     ✅ Found pairing: ${pairingDoc.id}`);
+        console.log(`       Status: ${pairingData.status}, Users: ${JSON.stringify(pairingData.users)}`);
+        console.log(`       user1_id: ${pairingData.user1_id}, user2_id: ${pairingData.user2_id}`);
+        
+        // Validate users array
+        if (!pairingData.users || !Array.isArray(pairingData.users) || !pairingData.users.includes(user.id)) {
+          console.log(`     ⚠️  WARNING: User ${user.id} not properly included in users array`);
+        }
+      } else {
+        console.log(`     ❌ No pairing found for ${user.username}`);
+      }
     }
     
     // Check Global Feed

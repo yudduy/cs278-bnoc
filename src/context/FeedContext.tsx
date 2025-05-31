@@ -8,7 +8,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Alert } from 'react-native';
-import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, Unsubscribe } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, Unsubscribe, doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import firebaseService from '../services/firebase';
 import { useAuth } from './AuthContext';
@@ -105,23 +105,70 @@ export const FeedProvider: React.FC<FeedProviderProps> = ({
       feedListener();
     }
     
-    // Listen for completed pairings that include the current user
-    const feedQuery = query(
+    // Listen to ALL pairings (not just globalFeed) to catch real-time updates
+    // This ensures we get immediate updates when photos are uploaded
+    // Start with basic query that works with existing indexes
+    const pairingsQuery = query(
       collection(db, 'pairings'),
       where('status', '==', 'completed'),
-      where('users', 'array-contains', user.id),
       orderBy('completedAt', 'desc'),
-      limit(20)
+      limit(50) // Large limit to catch all recent activity
     );
     
-    const unsubscribe = onSnapshot(feedQuery, async (snapshot) => {
+    const unsubscribe = onSnapshot(pairingsQuery, async (snapshot) => {
       try {
-        const completedPairings: Pairing[] = [];
+        console.log('DEBUG: Pairings listener triggered, snapshot size:', snapshot.size);
+        
+        // Ensure user is still available
+        if (!user?.id) {
+          console.log('DEBUG: User no longer available in snapshot listener');
+          return;
+        }
+        
+        if (snapshot.empty) {
+          console.log('DEBUG: No pairings found');
+          setPairings([]);
+          return;
+        }
+        
+        const allPairings: Pairing[] = [];
         
         snapshot.forEach((doc) => {
-          const pairingData = { id: doc.id, ...doc.data() } as Pairing;
-          completedPairings.push(pairingData);
+          const data = doc.data();
+          allPairings.push({
+            id: doc.id,
+            ...data
+          } as Pairing);
         });
+        
+        console.log('DEBUG: Retrieved pairings from real-time listener:', allPairings.length);
+        
+        // Filter for relevant pairings based on connections and privacy
+        const userConnections = Array.isArray(user.connections) ? user.connections : [];
+        const allRelevantUsers = [user.id, ...userConnections].filter(Boolean); // Filter out null/undefined values
+        
+        const relevantPairings = allPairings.filter(pairing => {
+          // Include if user is involved or it's a public pairing involving their connections
+          const isUserInvolved = pairing.users && pairing.users.some(userId => userId === user.id);
+          const isConnectionInvolved = pairing.users && pairing.users.some(userId => userConnections.includes(userId));
+          const isPublic = !pairing.isPrivate;
+          
+          return isUserInvolved || (isConnectionInvolved && isPublic);
+        });
+        
+        // Sort by completion time, then by last updated time
+        relevantPairings.sort((a, b) => {
+          const aTime = a.completedAt?.toDate?.() || a.lastUpdatedAt?.toDate?.() || new Date(0);
+          const bTime = b.completedAt?.toDate?.() || b.lastUpdatedAt?.toDate?.() || new Date(0);
+          return bTime.getTime() - aTime.getTime();
+        });
+        
+        console.log('DEBUG: Relevant pairings after filtering and sorting:', relevantPairings.length);
+        
+        // Only show completed pairings in the feed (filter out in-progress ones)
+        const completedPairings = relevantPairings.filter(pairing => pairing.status === 'completed');
+        
+        console.log('DEBUG: Completed pairings for feed:', completedPairings.length);
         
         // Update pairings state with real-time data
         setPairings(completedPairings);
@@ -130,6 +177,87 @@ export const FeedProvider: React.FC<FeedProviderProps> = ({
         const newUsers: Record<string, User> = { ...users };
         const userIds = new Set<string>();
         completedPairings.forEach(pairing => {
+          pairing.users.forEach(userId => userIds.add(userId));
+        });
+        
+        const usersToFetch = Array.from(userIds).filter(id => !newUsers[id]);
+        if (usersToFetch.length > 0) {
+          console.log('DEBUG: Fetching user data for:', usersToFetch.length, 'users');
+          await Promise.all(
+            usersToFetch.map(async (userId) => {
+              try {
+                const userData = await firebaseService.getUserById(userId);
+                if (userData) {
+                  newUsers[userId] = userData;
+                }
+              } catch (error) {
+                console.error(`Error fetching user ${userId}:`, error);
+              }
+            })
+          );
+          setUsers(newUsers);
+        }
+      } catch (error) {
+        console.error('Error processing pairings real-time updates:', error);
+      }
+    }, (error) => {
+      console.error('Error listening to pairings updates:', error);
+      // Try to fall back to basic query if the indexed query fails
+      setupBasicFeedListener();
+    });
+    
+    setFeedListener(unsubscribe);
+  };
+  
+  /**
+   * Fallback listener for when main query fails (index issues)
+   */
+  const setupBasicFeedListener = () => {
+    console.log('DEBUG: Setting up basic feed listener as fallback');
+    
+    // Basic query that should always work
+    const basicQuery = query(
+      collection(db, 'pairings'),
+      where('status', '==', 'completed'),
+      orderBy('date', 'desc'),
+      limit(30)
+    );
+    
+    const unsubscribe = onSnapshot(basicQuery, async (snapshot) => {
+      try {
+        console.log('DEBUG: Basic feed listener triggered, snapshot size:', snapshot.size);
+        
+        // Ensure user is still available
+        if (!user?.id) {
+          console.log('DEBUG: User no longer available in basic snapshot listener');
+          return;
+        }
+        
+        const completedPairings: Pairing[] = [];
+        
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          completedPairings.push({
+            id: doc.id,
+            ...data
+          } as Pairing);
+        });
+        
+        // Filter for relevant pairings
+        const userConnections = Array.isArray(user.connections) ? user.connections : [];
+        const allRelevantUsers = [user.id, ...userConnections];
+        
+        const relevantPairings = completedPairings.filter(pairing => {
+          return pairing.users.some(userId => allRelevantUsers.includes(userId)) ||
+                 !pairing.isPrivate;
+        });
+        
+        setPairings(relevantPairings);
+        
+        // Fetch users as before
+        const newUsers: Record<string, User> = { ...users };
+        const userIds = new Set<string>();
+        relevantPairings.forEach(pairing => {
           pairing.users.forEach(userId => userIds.add(userId));
         });
         
@@ -150,10 +278,10 @@ export const FeedProvider: React.FC<FeedProviderProps> = ({
           setUsers(newUsers);
         }
       } catch (error) {
-        console.error('Error processing feed updates:', error);
+        console.error('Error processing basic feed updates:', error);
       }
     }, (error) => {
-      console.error('Error listening to feed updates:', error);
+      console.error('Basic feed listener also failed:', error);
     });
     
     setFeedListener(unsubscribe);

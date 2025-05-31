@@ -11,7 +11,8 @@ import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import firebaseService from '../services/firebase';
 import { useAuth } from './AuthContext';
-import { Pairing, SubmitPhotoParams, Comment } from '../types';
+import { Pairing, SubmitPhotoParams, Comment, PairingStatus } from '../types';
+import { Timestamp } from 'firebase/firestore';
 
 // Context type definition
 interface PairingContextType {
@@ -40,10 +41,10 @@ interface PairingContextType {
   clearPairingError: () => void;
   
   // Planner mode functions
-  setPhotoMode: (mode: 'individual' | 'together') => Promise<void>;
+  setPhotoMode: (mode: 'together') => Promise<void>;
   getPhotoModeStatus: () => {
     hasChoice: boolean;
-    mode: 'individual' | 'together' | null;
+    mode: 'together' | null;
     chosenBy: string | null;
     chosenByUsername: string | null;
     isCurrentUserChoice: boolean;
@@ -105,8 +106,16 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   
   // Set up real-time listener for current pairing when it changes
   useEffect(() => {
-    if (currentPairing?.id) {
+    if (currentPairing?.id && user?.id) {
+      console.log('DEBUG: Setting up real-time listener for pairing:', currentPairing.id);
       setupPairingListener(currentPairing.id);
+    } else {
+      // Clean up listener if no current pairing
+      if (pairingListener) {
+        console.log('DEBUG: Cleaning up pairing listener - no current pairing');
+        pairingListener();
+        setPairingListener(null);
+      }
     }
     
     return () => {
@@ -115,7 +124,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
         setPairingListener(null);
       }
     };
-  }, [currentPairing?.id]);
+  }, [currentPairing?.id, user?.id]); // Add user?.id as dependency for safety
   
   /**
    * Set up real-time listener for pairing updates
@@ -123,20 +132,39 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   const setupPairingListener = (pairingId: string) => {
     // Clean up existing listener
     if (pairingListener) {
+      console.log('DEBUG: Cleaning up existing pairing listener');
       pairingListener();
     }
     
+    console.log('DEBUG: Setting up new real-time listener for pairing:', pairingId);
     const pairingRef = doc(db, 'pairings', pairingId);
     const unsubscribe = onSnapshot(pairingRef, (doc) => {
       if (doc.exists() && user?.id) {
         const pairingData = { id: doc.id, ...doc.data() } as Pairing;
+        console.log('DEBUG: Real-time update received for pairing:', pairingId, {
+          status: pairingData.status,
+          photoMode: pairingData.photoMode,
+          user1_photoURL: !!pairingData.user1_photoURL,
+          user2_photoURL: !!pairingData.user2_photoURL
+        });
+        
+        // Update the current pairing data
         setCurrentPairing(pairingData);
         
         // Update status based on real-time pairing state
         updatePairingStatus(pairingData);
+      } else if (!doc.exists()) {
+        console.log('DEBUG: Pairing document no longer exists:', pairingId);
+        // Pairing was deleted, reload to find new current pairing
+        loadCurrentPairing();
       }
     }, (error) => {
       console.error('Error listening to pairing updates:', error);
+      // On error, try to reload the current pairing
+      setTimeout(() => {
+        console.log('DEBUG: Retrying to load current pairing after listener error');
+        loadCurrentPairing();
+      }, 2000);
     });
     
     setPairingListener(unsubscribe);
@@ -186,25 +214,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
         return;
       }
       
-      // PRIORITY 2: Check individual mode - this should complete immediately when anyone submits
-      if (pairing.photoMode === 'individual') {
-        console.log('DEBUG: Individual mode detected');
-        const anyPhotoSubmitted = pairing.user1_photoURL || pairing.user2_photoURL;
-        
-        if (anyPhotoSubmitted) {
-          console.log('DEBUG: Individual mode photo submitted, marking as completed');
-          setPairingStatus('completed');
-          setWaitingForUser(null);
-          return;
-        } else {
-          console.log('DEBUG: Individual mode, no photos yet');
-          setPairingStatus('idle');
-          setWaitingForUser(null);
-          return;
-        }
-      }
-      
-      // PRIORITY 3: Handle together mode or no mode set
+      // PRIORITY 2: Handle together mode - both users must submit
       if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
         console.log('DEBUG: Together mode - current user submitted, waiting for partner');
         setPairingStatus('waiting');
@@ -283,9 +293,6 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
         setWaitingForUser(null);
         setPartnerUsername(null);
         
-        // TODO: Consider cleaning up invalid pairing from Firebase here
-        // await firebaseService.deletePairing(pairing.id);
-        
         return;
       }
       
@@ -299,7 +306,17 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       }
       
       setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
+      
+      // IMPORTANT: Always update the pairing state, even if it's the same ID
+      // This ensures we get the latest status updates
+      const previousPairingId = currentPairing?.id;
       setCurrentPairing(pairing);
+      
+      // If pairing ID changed, reset listener
+      if (previousPairingId !== pairing.id) {
+        console.log('DEBUG: Pairing changed from', previousPairingId, 'to', pairing.id);
+        // The useEffect will handle setting up the new listener
+      }
       
       // Check if this is a new pairing date and reset intro flag if needed
       if (pairing) {
@@ -313,84 +330,15 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
         }
       }
       
-      // Update status based on pairing state
-      if (pairing) {
-        if (!hasLoggedCurrentPairingDebug) {
-          console.log('DEBUG: loadCurrentPairing - status check', {
-            pairingId: pairing.id,
-            status: pairing.status,
-            photoMode: pairing.photoMode,
-            user1_photoURL: !!pairing.user1_photoURL,
-            user2_photoURL: !!pairing.user2_photoURL
-          });
-        }
-        
-        // PRIORITY 1: Check if already completed
-        if (pairing.status === 'completed') {
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - pairing is completed');
-          }
-          setPairingStatus('completed');
-        } else if (pairing.photoMode === 'individual') {
-          // PRIORITY 2: Individual mode - complete if anyone has submitted
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - individual mode detected');
-          }
-          const anyPhotoSubmitted = pairing.user1_photoURL || pairing.user2_photoURL;
-          
-          if (anyPhotoSubmitted) {
-            if (!hasLoggedCurrentPairingDebug) {
-              console.log('DEBUG: loadCurrentPairing - individual mode photo submitted, marking as completed');
-            }
-            setPairingStatus('completed');
-            setWaitingForUser(null);
-          } else {
-            if (!hasLoggedCurrentPairingDebug) {
-              console.log('DEBUG: loadCurrentPairing - individual mode, no photos yet');
-            }
-            setPairingStatus('idle');
-          }
-        } else if (pairing.status === 'user1_submitted' && pairing.user1_id === user.id) {
-          // PRIORITY 3: Together mode - current user has submitted, waiting for partner
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - together mode, current user submitted');
-          }
-          setPairingStatus('waiting');
-          setWaitingForUser(pairing.user2_id);
-        } else if (pairing.status === 'user2_submitted' && pairing.user2_id === user.id) {
-          // PRIORITY 3: Together mode - current user has submitted, waiting for partner
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - together mode, current user submitted');
-          }
-          setPairingStatus('waiting');
-          setWaitingForUser(pairing.user1_id);
-        } else if (pairing.status === 'user1_submitted' && pairing.user2_id === user.id) {
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - together mode, partner submitted, current user needs to submit');
-          }
-          setPairingStatus('idle');
-          setWaitingForUser(null);
-        } else if (pairing.status === 'user2_submitted' && pairing.user1_id === user.id) {
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - together mode, partner submitted, current user needs to submit');
-          }
-          setPairingStatus('idle');
-          setWaitingForUser(null);
-        } else {
-          if (!hasLoggedCurrentPairingDebug) {
-            console.log('DEBUG: loadCurrentPairing - no photos submitted yet');
-          }
-          setPairingStatus('idle');
-        }
-      } else {
-        setPairingStatus('idle');
-      }
+      // Update status based on pairing state (this will be called again by the real-time listener)
+      await updatePairingStatus(pairing);
+      
     } catch (error) {
       console.error('Error loading current pairing:', error);
       setPairingError('Failed to load today\'s pairing');
       setPairingStatus('error');
     }
-  }, [user?.id, hasLoggedNoPairing, hasLoggedCurrentPairingDebug, lastPairingDate]);
+  }, [user?.id, hasLoggedNoPairing, hasLoggedCurrentPairingDebug, lastPairingDate, currentPairing?.id]);
   
   /**
    * Load pairing history for the current user
@@ -426,7 +374,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
       setPairingStatus('uploading');
       setPairingError(null);
       
-      console.log('Submitting photo for pairing:', currentPairing.id);
+      console.log('DEBUG: Submitting photo for pairing:', currentPairing.id);
       
       // Upload the photo using Firebase service
       await firebaseService.submitPairingPhoto(
@@ -436,69 +384,11 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
         params.isPrivate || false
       );
       
-      console.log('Photo submitted successfully');
+      console.log('DEBUG: Photo submitted successfully, waiting for real-time updates');
       
-      // Refresh the current pairing to get updated status
-      await loadCurrentPairing();
+      // Don't manually update state here - let the real-time listener handle it
+      // The real-time listener will pick up the changes and update the status accordingly
       
-      // Force a small delay then refresh again to ensure Firebase has propagated changes
-      setTimeout(async () => {
-        await loadCurrentPairing();
-      }, 1000);
-      
-      // For individual mode, the status should be completed immediately
-      // For together mode, check if both users have submitted
-      const refreshedPairing = await firebaseService.getPairingById(currentPairing.id);
-      if (refreshedPairing) {
-        console.log('DEBUG: Refreshed pairing after photo submission', {
-          status: refreshedPairing.status,
-          photoMode: refreshedPairing.photoMode,
-          user1_photoURL: !!refreshedPairing.user1_photoURL,
-          user2_photoURL: !!refreshedPairing.user2_photoURL
-        });
-        
-        // Update the current pairing state directly
-        setCurrentPairing(refreshedPairing);
-        
-        // Update status will be handled by the real-time listener
-        // But let's ensure the status is set correctly based on mode
-        if (refreshedPairing.photoMode === 'individual') {
-          // Individual mode should be completed immediately
-          console.log('DEBUG: Individual mode photo submitted, should be completed');
-          setPairingStatus('completed');
-          setWaitingForUser(null);
-        } else if (refreshedPairing.status === 'completed') {
-          setPairingStatus('completed');
-          setWaitingForUser(null);
-        } else {
-          // Together mode: determine if we're waiting for the partner
-          const isUser1 = refreshedPairing.user1_id === user.id;
-          const isUser2 = refreshedPairing.user2_id === user.id;
-          const partnerId = isUser1 ? refreshedPairing.user2_id : refreshedPairing.user1_id;
-          
-          if ((isUser1 && refreshedPairing.status === 'user1_submitted') ||
-              (isUser2 && refreshedPairing.status === 'user2_submitted')) {
-            setPairingStatus('waiting');
-            setWaitingForUser(partnerId);
-            
-            // Fetch partner username if not already set
-            if (!partnerUsername) {
-              try {
-                const partnerUser = await firebaseService.getUserById(partnerId);
-                if (partnerUser) {
-                  setPartnerUsername(partnerUser.username || partnerUser.displayName || 'Your partner');
-                }
-              } catch (error) {
-                console.error('Error fetching partner username:', error);
-              }
-            }
-          } else {
-            setPairingStatus('idle');
-          }
-        }
-      } else {
-        setPairingStatus('idle');
-      }
     } catch (error) {
       console.error('Error submitting photo:', error);
       setPairingError('Failed to upload photo: ' + (error instanceof Error ? error.message : String(error)));
@@ -609,7 +499,7 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
   /**
    * Set photo mode for the current pairing (planner mode)
    */
-  const setPhotoMode = async (mode: 'individual' | 'together'): Promise<void> => {
+  const setPhotoMode = async (mode: 'together'): Promise<void> => {
     if (!user?.id || !currentPairing) {
       setPairingError('No active pairing found');
       return;
@@ -644,7 +534,8 @@ export const PairingProvider: React.FC<PairingProviderProps> = ({ children }) =>
     }
     
     const hasChoice = !!currentPairing.photoMode;
-    const mode = currentPairing.photoMode || null;
+    // Only support 'together' mode now, treat any other mode as null
+    const mode: 'together' | null = currentPairing.photoMode === 'together' ? 'together' : null;
     const chosenBy = currentPairing.photoModeChosenBy || null;
     const isCurrentUserChoice = chosenBy === user.id;
     

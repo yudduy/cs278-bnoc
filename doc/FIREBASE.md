@@ -1,3 +1,4 @@
+
 # BNOC Firebase Integration Guide
 
 This document provides a comprehensive guide to the Firebase integration in the BNOC Daily Meetup Selfie application, including the database schema, security rules, Cloud Functions, and service implementations.

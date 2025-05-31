@@ -6,7 +6,7 @@
 
 import { NavigatorScreenParams } from '@react-navigation/native'; // Import NavigatorScreenParams
 
-export type PhotoMode = 'individual' | 'together';
+export type PhotoMode = 'together';
 
 export type MainStackParamList = {
   // MODIFIED: Define params for TabNavigator to accept screen and params for MainTabParamList
@@ -35,6 +35,7 @@ export type MainStackParamList = {
   Privacy: undefined;
   Help: undefined;
   About: undefined;
+  Waiting: { pairingId: string }; // Added WaitingScreen (renamed to Waiting)
 };
 
 export type RootStackParamList = {

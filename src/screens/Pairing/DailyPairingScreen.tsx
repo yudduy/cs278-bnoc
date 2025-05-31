@@ -20,6 +20,8 @@ import {
   Animated
 } from 'react-native';
 import { useNavigation, CommonActions } from '@react-navigation/native';
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONTS, BORDER_RADIUS } from '../../config/theme';
 import { usePairing } from '../../context/PairingContext';
@@ -45,9 +47,14 @@ const DailyPairingScreen: React.FC = () => {
   const [partner, setPartner] = useState<User | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [useRealtimeListener, setUseRealtimeListener] = useState(true);
   
   // Animation for Let's Go button
   const buttonScale = useRef(new Animated.Value(1)).current;
+  
+  // Refs for managing Firebase listeners
+  const pairingListener = useRef<Unsubscribe | null>(null);
+  const partnerListener = useRef<Unsubscribe | null>(null);
 
   // Determine if the current user is user1 in the pairing
   const isUser1 = useMemo(() => currentPairing?.user1_id === user?.id, [currentPairing, user]);
@@ -70,6 +77,18 @@ const DailyPairingScreen: React.FC = () => {
     return isUser1 ? currentPairing.user2_id : currentPairing.user1_id;
   }, [currentPairing, user, isUser1]);
 
+  // Cleanup function for listeners
+  const cleanupListeners = useCallback(() => {
+    if (pairingListener.current) {
+      pairingListener.current();
+      pairingListener.current = null;
+    }
+    if (partnerListener.current) {
+      partnerListener.current();
+      partnerListener.current = null;
+    }
+  }, []);
+  
   // FIXED: Use useCallback to stabilize function references
   const fetchPartnerDetails = useCallback(async (id: string) => {
     try {
@@ -85,6 +104,66 @@ const DailyPairingScreen: React.FC = () => {
     const randomIndex = Math.floor(Math.random() * DAILY_PAIRING_MESSAGES.length);
     setWelcomeMessage(DAILY_PAIRING_MESSAGES[randomIndex]);
   }, []);
+  
+  // Setup real-time listener for current pairing
+  const setupPairingListener = useCallback(async () => {
+    if (!currentPairing?.id || !user?.id || !useRealtimeListener) {
+      console.log('DEBUG: DailyPairingScreen - Skipping pairing listener setup:', {
+        pairingId: currentPairing?.id,
+        userId: user?.id,
+        useRealtimeListener
+      });
+      return;
+    }
+    
+    try {
+      console.log('DEBUG: DailyPairingScreen - Setting up pairing listener for:', currentPairing.id);
+      
+      // Listen to pairing document changes
+      const pairingRef = doc(db, 'pairings', currentPairing.id);
+      
+      pairingListener.current = onSnapshot(
+        pairingRef,
+        async (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const updatedPairing = { id: docSnapshot.id, ...docSnapshot.data() } as any;
+            console.log('DEBUG: DailyPairingScreen - Pairing updated:', updatedPairing);
+            
+            // Update partner data if pairing changed
+            if (partnerId) {
+              try {
+                const partnerData = await firebaseService.getUserById(partnerId);
+                setPartner(partnerData || null);
+                console.log('DEBUG: DailyPairingScreen - Partner data updated via real-time:', partnerData?.displayName);
+              } catch (error) {
+                console.error('Failed to load updated partner data:', error);
+              }
+            }
+          }
+        },
+        (error) => {
+          console.error('DailyPairingScreen pairing listener error:', error);
+          logger.error('DailyPairingScreen pairing listener failed', error);
+          
+          // Fallback to manual loading on error
+          setUseRealtimeListener(false);
+          if (partnerId) {
+            fetchPartnerDetails(partnerId);
+          }
+        }
+      );
+      
+    } catch (error) {
+      console.error('Failed to setup pairing listener:', error);
+      logger.error('DailyPairingScreen pairing listener setup failed', error);
+      
+      // Fallback to manual loading
+      setUseRealtimeListener(false);
+      if (partnerId) {
+        fetchPartnerDetails(partnerId);
+      }
+    }
+  }, [currentPairing?.id, user?.id, useRealtimeListener, partnerId, fetchPartnerDetails]);
 
   // Handle pull-to-refresh
   const onRefresh = useCallback(async () => {
@@ -128,8 +207,12 @@ const DailyPairingScreen: React.FC = () => {
           selectRandomWelcomeMessage();
         }
 
-        // Load partner details if we have a partnerId and haven't loaded partner yet
-        if (partnerId && !partner && isMounted) {
+        // Setup real-time listeners if we have a pairing and real-time is enabled
+        if (useRealtimeListener && currentPairing?.id && isMounted) {
+          console.log('DEBUG: DailyPairingScreen - Setting up real-time listeners');
+          setupPairingListener();
+        } else if (partnerId && !partner && isMounted && !useRealtimeListener) {
+          // Load partner details manually if not using real-time
           await fetchPartnerDetails(partnerId);
         }
 
@@ -147,13 +230,17 @@ const DailyPairingScreen: React.FC = () => {
     // Cleanup function to prevent state updates on unmounted component
     return () => {
       isMounted = false;
+      cleanupListeners();
     };
   }, [
     user?.id, 
     currentPairing === undefined ? 'loading' : currentPairing?.id, // Only depend on pairing ID changes, not the full object
     partnerId, 
     !partner && partnerId ? 'need-partner' : 'have-partner', // Simplified partner loading state
-    !welcomeMessage ? 'need-message' : 'have-message' // Simplified message state
+    !welcomeMessage ? 'need-message' : 'have-message', // Simplified message state
+    useRealtimeListener,
+    setupPairingListener,
+    cleanupListeners
   ]);
 
   const handleGoToChat = useCallback(() => {

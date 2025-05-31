@@ -16,26 +16,116 @@ import {
   ActivityIndicator,
   SafeAreaView,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { usePairing } from '../../context/PairingContext';
+import { useFeed } from '../../context/FeedContext';
 import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONTS, BORDER_RADIUS } from '../../config/theme';
 import firebaseService from '../../services/firebase';
 import { User } from '../../types';
 import logger from '../../utils/logger';
-import PhotoModeSelectionModal, { PhotoMode } from '../../components/modals/PhotoModeSelectionModal';
+import PairingInstructionsModal from '../../components/modals/PairingInstructionsModal';
 import CountdownTimer from '../../components/common/CountdownTimer';
 
 export default function CurrentPairingScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const { currentPairing, pairingStatus, getPhotoModeStatus } = usePairing();
+  const { currentPairing, pairingStatus, getPhotoModeStatus, loadCurrentPairing } = usePairing();
+  const { refreshFeed } = useFeed();
   
   const [partner, setPartner] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showPhotoModeModal, setShowPhotoModeModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showInstructionsModal, setShowInstructionsModal] = useState(false);
+  const [useRealtimeListener, setUseRealtimeListener] = useState(true);
+  
+  // Refs for managing Firebase listeners
+  const pairingListener = React.useRef<Unsubscribe | null>(null);
+  const partnerListener = React.useRef<Unsubscribe | null>(null);
+  
+  // Cleanup function for listeners
+  const cleanupListeners = useCallback(() => {
+    if (pairingListener.current) {
+      pairingListener.current();
+      pairingListener.current = null;
+    }
+    if (partnerListener.current) {
+      partnerListener.current();
+      partnerListener.current = null;
+    }
+  }, []);
+  
+  // Setup real-time listener for current pairing
+  const setupPairingListener = useCallback(async () => {
+    if (!currentPairing?.id || !user?.id || !useRealtimeListener) {
+      console.log('DEBUG: CurrentPairingScreen - Skipping pairing listener setup:', {
+        pairingId: currentPairing?.id,
+        userId: user?.id,
+        useRealtimeListener
+      });
+      return;
+    }
+    
+    try {
+      console.log('DEBUG: CurrentPairingScreen - Setting up pairing listener for:', currentPairing.id);
+      
+      // Listen to pairing document changes
+      const pairingRef = doc(db, 'pairings', currentPairing.id);
+      
+      pairingListener.current = onSnapshot(
+        pairingRef,
+        async (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const updatedPairing = { id: docSnapshot.id, ...docSnapshot.data() } as any;
+            console.log('DEBUG: CurrentPairingScreen - Pairing updated:', updatedPairing);
+            
+            // Update partner data if pairing changed
+            const isUser1 = updatedPairing.user1_id === user.id;
+            const partnerId = isUser1 ? updatedPairing.user2_id : updatedPairing.user1_id;
+            
+            try {
+              const partnerData = await firebaseService.getUserById(partnerId);
+              setPartner(partnerData);
+              console.log('DEBUG: CurrentPairingScreen - Partner data updated:', partnerData?.displayName);
+            } catch (error) {
+              console.error('Failed to load updated partner data:', error);
+            }
+            
+            // If pairing just completed, refresh the feed
+            if (updatedPairing.status === 'completed' && updatedPairing.user1_photoURL && updatedPairing.user2_photoURL) {
+              console.log('DEBUG: CurrentPairingScreen - Pairing completed via real-time update, refreshing feed');
+              try {
+                await refreshFeed();
+              } catch (error) {
+                console.error('Failed to refresh feed after pairing completion:', error);
+              }
+            }
+          }
+        },
+        (error) => {
+          console.error('CurrentPairingScreen pairing listener error:', error);
+          logger.error('CurrentPairingScreen pairing listener failed', error);
+          
+          // Fallback to manual loading on error
+          setUseRealtimeListener(false);
+          loadPartnerData();
+        }
+      );
+      
+    } catch (error) {
+      console.error('Failed to setup pairing listener:', error);
+      logger.error('CurrentPairingScreen pairing listener setup failed', error);
+      
+      // Fallback to manual loading
+      setUseRealtimeListener(false);
+      loadPartnerData();
+    }
+  }, [currentPairing?.id, user?.id, useRealtimeListener, refreshFeed]);
   
   // Load partner data once when component mounts
   const loadPartnerData = useCallback(async () => {
@@ -50,16 +140,104 @@ export default function CurrentPairingScreen() {
       
       const partnerData = await firebaseService.getUserById(partnerId);
       setPartner(partnerData);
+      console.log('DEBUG: CurrentPairingScreen - Manual partner data loaded:', partnerData?.displayName);
     } catch (error) {
       logger.error('Failed to load partner data', error);
     } finally {
       setLoading(false);
     }
-  }, [currentPairing?.id, user?.id]); // Only depend on IDs, not full objects
+  }, [currentPairing?.id, user?.id]);
   
   useEffect(() => {
     loadPartnerData();
   }, [loadPartnerData]);
+  
+  // Setup real-time listeners when pairing or user changes
+  useEffect(() => {
+    if (!user) return;
+    
+    // Cleanup existing listeners first
+    cleanupListeners();
+    
+    if (useRealtimeListener && currentPairing?.id) {
+      console.log('DEBUG: CurrentPairingScreen - Setting up real-time listeners');
+      setupPairingListener();
+    } else if (currentPairing && !useRealtimeListener) {
+      console.log('DEBUG: CurrentPairingScreen - Using manual loading (real-time disabled)');
+      loadPartnerData();
+    }
+    
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      cleanupListeners();
+    };
+  }, [currentPairing?.id, user?.id, useRealtimeListener, setupPairingListener, cleanupListeners]);
+  
+  // Add effect to reload partner data when currentPairing changes (real-time updates)
+  useEffect(() => {
+    if (currentPairing && user && !useRealtimeListener) {
+      console.log('DEBUG: CurrentPairing changed, reloading partner data (manual mode)');
+      loadPartnerData();
+      
+      // If pairing just completed, refresh the feed
+      if (currentPairing.status === 'completed') {
+        console.log('DEBUG: Pairing completed, refreshing feed');
+        refreshFeed().catch(error => {
+          console.error('Failed to refresh feed after pairing completion:', error);
+        });
+      }
+    }
+  }, [currentPairing?.id, currentPairing?.status, currentPairing?.user1_photoURL, currentPairing?.user2_photoURL, useRealtimeListener]);
+  
+  // Handle refresh (pull-to-refresh functionality like profile screen)
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    
+    // Temporarily disable real-time listeners during manual refresh
+    const wasUsingRealtime = useRealtimeListener;
+    if (wasUsingRealtime) {
+      setUseRealtimeListener(false);
+      cleanupListeners();
+    }
+    
+    try {
+      // Force reload the current pairing to get the latest state
+      await loadCurrentPairing();
+      
+      // Reload partner data after pairing refresh
+      if (currentPairing && user) {
+        const isUser1 = currentPairing.user1_id === user.id;
+        const partnerId = isUser1 ? currentPairing.user2_id : currentPairing.user1_id;
+        
+        const partnerData = await firebaseService.getUserById(partnerId);
+        setPartner(partnerData);
+        console.log('DEBUG: CurrentPairingScreen - Manual refresh completed');
+      }
+    } catch (error) {
+      logger.error('Failed to refresh pairing data', error);
+    } finally {
+      setRefreshing(false);
+      
+      // Re-enable real-time listeners if they were enabled before
+      if (wasUsingRealtime) {
+        setUseRealtimeListener(true);
+      }
+    }
+  }, [loadCurrentPairing, currentPairing?.id, user?.id, useRealtimeListener, cleanupListeners]);
+  
+  // Toggle between real-time and manual refresh modes
+  const toggleRealtimeMode = useCallback(() => {
+    const newMode = !useRealtimeListener;
+    console.log('DEBUG: CurrentPairingScreen - Toggling real-time mode:', newMode);
+    setUseRealtimeListener(newMode);
+    
+    if (!newMode) {
+      // Switching to manual mode - cleanup listeners and load data manually
+      cleanupListeners();
+      loadPartnerData();
+    }
+    // If switching to real-time mode, the useEffect will handle setting up listeners
+  }, [useRealtimeListener, cleanupListeners, loadPartnerData]);
   
   // Get pairing photo URLs
   const isUser1 = currentPairing?.user1_id === user?.id;
@@ -122,11 +300,11 @@ export default function CurrentPairingScreen() {
   
   // Navigation handlers
   const handleTakePhoto = () => {
-    setShowPhotoModeModal(true);
+    setShowInstructionsModal(true);
   };
   
-  const handlePhotoModeSelection = (mode: PhotoMode) => {
-    setShowPhotoModeModal(false);
+  const handleProceedToCamera = () => {
+    setShowInstructionsModal(false);
     
     if (currentPairing && user) {
       // Camera is in the MainStack, so navigate up from PairingStack
@@ -134,13 +312,13 @@ export default function CurrentPairingScreen() {
         pairingId: currentPairing.id,
         userId: user.id,
         submissionType: 'pairing',
-        photoMode: mode
+        photoMode: 'together' // Always use together mode now
       });
     }
   };
   
-  const handleClosePhotoModeModal = () => {
-    setShowPhotoModeModal(false);
+  const handleCloseInstructionsModal = () => {
+    setShowInstructionsModal(false);
   };
   
   const handleOpenChat = () => {
@@ -193,7 +371,17 @@ export default function CurrentPairingScreen() {
   
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={COLORS.primary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
         {/* Partner Info */}
         <View style={styles.partnerSection}>
           <Text style={styles.partnerName}>
@@ -204,87 +392,86 @@ export default function CurrentPairingScreen() {
         {/* Photo Display */}
         <View style={styles.photoContainer}>
           {pairingStatus === 'completed' ? (
-            // Check photoMode to determine display style
-            currentPairing?.photoMode === 'individual' ? (
-              // Individual mode: Show single photo
-              <View style={styles.singlePhotoContainer}>
+            // Both photos submitted and pairing completed
+            bothPhotosSubmitted ? (
+              <View style={styles.combinedPhotoContainer}>
                 <Image 
-                  source={{ uri: (userPhotoURL || partnerPhotoURL)! }}
-                  style={styles.singlePhoto}
+                  source={{ uri: userPhotoURL }}
+                  style={styles.combinedPhoto}
                   resizeMode="cover"
                 />
-                <Text style={styles.completedText}>
-                  Pairing completed! 🎉
-                </Text>
+                <Image 
+                  source={{ uri: partnerPhotoURL }}
+                  style={styles.combinedPhoto}
+                  resizeMode="cover"
+                />
               </View>
             ) : (
-              // Together mode: Show combined photos when both submitted
-              bothPhotosSubmitted ? (
-                <View style={styles.combinedPhotoContainer}>
-                  <Image 
-                    source={{ uri: userPhotoURL }}
-                    style={styles.combinedPhoto}
-                    resizeMode="cover"
-                  />
-                  <Image 
-                    source={{ uri: partnerPhotoURL }}
-                    style={styles.combinedPhoto}
-                    resizeMode="cover"
-                  />
-                </View>
-              ) : (userPhotoURL || partnerPhotoURL) ? (
-                // One photo submitted in together mode
-                <View style={styles.singlePhotoContainer}>
-                  <Image 
-                    source={{ uri: (userPhotoURL || partnerPhotoURL)! }}
-                    style={styles.singlePhoto}
-                    resizeMode="cover"
-                  />
-                  <Text style={styles.waitingText}>
-                    Waiting for {partner?.displayName || 'partner'}...
-                  </Text>
-                </View>
-              ) : (
-                // No photos in together mode
-                <View style={styles.placeholderContainer}>
-                  <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
-                  <Text style={styles.placeholderText}>
-                    Take your together selfie to get started
-                  </Text>
-                </View>
-              )
+              // This shouldn't happen in completed state, but handle gracefully
+              <View style={styles.placeholderContainer}>
+                <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
+                <Text style={styles.placeholderText}>
+                  Take your together selfie to get started
+                </Text>
+              </View>
             )
-          ) : (userPhotoURL || partnerPhotoURL) ? (
-            // Photos submitted but not completed yet
+          ) : userPhotoURL && !partnerPhotoURL ? (
+            // Current user has submitted, waiting for partner
             <View style={styles.singlePhotoContainer}>
               <Image 
-                source={{ uri: (userPhotoURL || partnerPhotoURL)! }}
+                source={{ uri: userPhotoURL }}
                 style={styles.singlePhoto}
                 resizeMode="cover"
               />
-              {currentPairing?.photoMode === 'individual' ? (
-                <Text style={styles.completedText}>
-                  Pairing completed! 🎉
-                </Text>
-              ) : (
-                <Text style={styles.waitingText}>
-                  Waiting for {partner?.displayName || 'partner'}...
-                </Text>
-              )}
+              <Text style={styles.waitingText}>
+                You've submitted! Waiting for {partner?.displayName || 'partner'}...
+              </Text>
+            </View>
+          ) : !userPhotoURL && partnerPhotoURL ? (
+            // Partner has submitted, current user needs to submit
+            <View style={styles.singlePhotoContainer}>
+              <Image 
+                source={{ uri: partnerPhotoURL }}
+                style={styles.singlePhoto}
+                resizeMode="cover"
+              />
+              <Text style={styles.waitingText}>
+                {partner?.displayName || 'Your partner'} has submitted! Your turn to take a photo.
+              </Text>
+            </View>
+          ) : userPhotoURL && partnerPhotoURL ? (
+            // Both submitted but not yet marked completed
+            <View style={styles.combinedPhotoContainer}>
+              <Image 
+                source={{ uri: userPhotoURL }}
+                style={styles.combinedPhoto}
+                resizeMode="cover"
+              />
+              <Image 
+                source={{ uri: partnerPhotoURL }}
+                style={styles.combinedPhoto}
+                resizeMode="cover"
+              />
             </View>
           ) : (
-            // Show placeholder when no photos
+            // Neither user has submitted yet
             <View style={styles.placeholderContainer}>
               <Ionicons name="camera-outline" size={48} color={COLORS.textSecondary} />
               <Text style={styles.placeholderText}>
-                {photoModeStatus.hasChoice && currentPairing?.photoMode 
-                  ? `Take your ${currentPairing.photoMode} selfie to get started`
-                  : 'Take your selfie to get started'
-                }
+                Take your together selfie to get started
               </Text>
             </View>
           )}
         </View>
+        
+        {/* Completion Message */}
+        {pairingStatus === 'completed' && bothPhotosSubmitted && (
+          <View style={styles.completionMessageContainer}>
+            <Text style={styles.completedText}>
+              Pairing completed! 🎉
+            </Text>
+          </View>
+        )}
         
         {/* Countdown Timer */}
         {timerInfo && (
@@ -304,7 +491,7 @@ export default function CurrentPairingScreen() {
         
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
-          {(!userPhotoURL && !partnerPhotoURL) && (
+          {(!userPhotoURL) && (
             <TouchableOpacity style={styles.actionButton} onPress={handleTakePhoto}>
               <Ionicons name="camera" size={28} color={COLORS.primary} />
             </TouchableOpacity>
@@ -313,19 +500,25 @@ export default function CurrentPairingScreen() {
           <TouchableOpacity style={styles.actionButton} onPress={handleOpenChat}>
             <Ionicons name="chatbubble-outline" size={28} color={COLORS.primary} />
           </TouchableOpacity>
+          
+          {/* Real-time mode toggle */}
+          <TouchableOpacity 
+            style={[styles.actionButton, useRealtimeListener && styles.actionButtonActive]} 
+            onPress={toggleRealtimeMode}
+          >
+            <Ionicons 
+              name={useRealtimeListener ? "flash" : "flash-off"} 
+              size={28} 
+              color={useRealtimeListener ? COLORS.background : COLORS.primary} 
+            />
+          </TouchableOpacity>
         </View>
       </ScrollView>
-      <PhotoModeSelectionModal
-        visible={showPhotoModeModal}
-        onSelectMode={handlePhotoModeSelection}
-        onCancel={handleClosePhotoModeModal}
+      <PairingInstructionsModal
+        visible={showInstructionsModal}
+        onProceed={handleProceedToCamera}
+        onCancel={handleCloseInstructionsModal}
         partnerName={partner?.displayName || partner?.username}
-        isPlannerMode={!photoModeStatus.hasChoice}
-        accessibilityLabel={
-          photoModeStatus.hasChoice 
-            ? 'Photo mode selection - mode already chosen'
-            : 'Photo mode selection - planner mode'
-        }
       />
     </SafeAreaView>
   );
@@ -449,5 +642,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actionButtonActive: {
+    backgroundColor: COLORS.primary,
+  },
+  completionMessageContainer: {
+    marginBottom: 24,
   },
 }); 

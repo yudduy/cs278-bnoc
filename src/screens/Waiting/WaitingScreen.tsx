@@ -2,7 +2,8 @@
  * WaitingScreen
  * 
  * Screen to show when waiting for a partner to post their selfie.
- * Displays partner info, time remaining, and allows sending reminders.
+ * Displays partner info, time remaining, and allows chatting.
+ * Automatically redirects to feed when pairing is completed.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -12,42 +13,43 @@ import {
   StyleSheet, 
   Image, 
   TouchableOpacity, 
-  ActivityIndicator,
   Animated,
   Easing,
   Platform,
-  SafeAreaView
+  SafeAreaView,
+  Alert
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { usePairing } from '../../context/PairingContext';
+import { useFeed } from '../../context/FeedContext';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../config/theme';
 import { globalStyles } from '../../styles/globalStyles';
 import { getTimeRemainingUntilDeadline } from '../../utils/notifications/notificationUtils';
-import { useNotification } from '../../context/NotificationContext';
 import { RouteProp } from '@react-navigation/native';
-import { CameraStackParamList } from '../../types/navigation';
+import { MainStackParamList } from '../../types/navigation';
+import { db } from '../../config/firebase';
 import firebaseService from '../../services/firebase';
 import logger from '../../utils/logger';
 
 const WaitingScreen: React.FC = () => {
   // Navigation and route
   const navigation = useNavigation();
-  const route = useRoute<RouteProp<CameraStackParamList, 'WaitingScreen'>>();
+  const route = useRoute<RouteProp<MainStackParamList, 'Waiting'>>();
   const pairingId = route.params?.pairingId;
   
   // Contexts
   const { user } = useAuth();
-  const { currentPairing, sendReminder } = usePairing();
-  const { sendLocalNotification } = useNotification();
+  const { currentPairing, loadCurrentPairing } = usePairing();
+  const { refreshFeed } = useFeed();
   
   // State
-  const [reminding, setReminding] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(getTimeRemainingUntilDeadline());
-  const [lastReminderSent, setLastReminderSent] = useState<number | null>(null);
   const [partner, setPartner] = useState<any | null>(null);
   const [timeToNextPairing, setTimeToNextPairing] = useState<string>('');
+  const [pairingData, setPairingData] = useState<any>(null);
   
   // Animations
   const pulseAnimation = new Animated.Value(1);
@@ -74,6 +76,64 @@ const WaitingScreen: React.FC = () => {
       ])
     ).start();
   }, []);
+  
+  // Real-time listener for pairing completion
+  useEffect(() => {
+    if (!pairingId) return;
+    
+    // Set up real-time listener for the pairing using Firebase onSnapshot
+    const pairingRef = doc(db, 'pairings', pairingId);
+    
+    const unsubscribe = onSnapshot(
+      pairingRef,
+      (doc) => {
+        if (doc.exists()) {
+          const pairing = { id: doc.id, ...doc.data() } as any;
+          console.log('DEBUG: WaitingScreen - Pairing update received:', pairing);
+          setPairingData(pairing);
+          
+          // Check if both users have submitted photos
+          const bothPhotosSubmitted = pairing.user1_photoURL && pairing.user2_photoURL;
+          const isPairingCompleted = pairing.status === 'completed';
+          
+          if (bothPhotosSubmitted && isPairingCompleted) {
+            console.log('DEBUG: WaitingScreen - Both photos submitted, redirecting to feed');
+            
+            // Show success message
+            Alert.alert(
+              'Pairing Completed! 🎉',
+              'Both photos have been submitted. Your pairing is now live in the feed!',
+              [
+                {
+                  text: 'View in Feed',
+                  onPress: () => {
+                    // Refresh feed and navigate to it
+                    refreshFeed().then(() => {
+                      (navigation as any).navigate('TabNavigator', {
+                        screen: 'Feed',
+                        params: {
+                          scrollToPairingId: pairingId,
+                          refresh: true
+                        }
+                      });
+                    });
+                  }
+                }
+              ]
+            );
+          }
+        }
+      },
+      (error) => {
+        console.error('Error listening to pairing updates:', error);
+        logger.error('WaitingScreen pairing listener error', error);
+      }
+    );
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [pairingId, navigation, refreshFeed]);
   
   // Update time remaining
   useEffect(() => {
@@ -133,69 +193,45 @@ const WaitingScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
   
-  // Handle send reminder
-  const handleSendReminder = async () => {
-    if (!partnerId || !currentPairing) return;
-    
-    // Check if reminder was sent in the last 15 minutes
-    const now = Date.now();
-    if (lastReminderSent && now - lastReminderSent < 15 * 60 * 1000) {
-      // Show message that reminder was recently sent
-      sendLocalNotification(
-        'Reminder Limit',
-        'You can only send one reminder every 15 minutes.',
-        { type: 'reminder_limit' }
-      );
-      return;
-    }
-    
-    try {
-      setReminding(true);
-      
-      // Send reminder
-      await sendReminder(currentPairing.id, partnerId);
-      
-      // Update last reminder sent time
-      setLastReminderSent(now);
-      
-      // Show success notification
-      sendLocalNotification(
-        'Reminder Sent',
-        `We've notified ${partner?.displayName || 'your partner'} to take their selfie.`,
-        { type: 'reminder_sent' }
-      );
-    } catch (error) {
-      logger.error('Error sending reminder', error);
-      
-      // Show error notification
-      sendLocalNotification(
-        'Reminder Failed',
-        'Failed to send reminder. Please try again later.',
-        { type: 'reminder_error' }
-      );
-    } finally {
-      setReminding(false);
+  // Handle going back to feed
+  const handleGoToFeed = () => {
+    (navigation as any).navigate('TabNavigator', {
+      screen: 'Feed'
+    });
+  };
+
+  // Handle going back to pairing screen
+  const handleGoBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // Fallback to pairing screen
+      (navigation as any).navigate('TabNavigator', {
+        screen: 'Pairing'
+      });
     }
   };
   
-  // Go back to feed screen
-  const handleBack = () => {
-    navigation.goBack();
-  };
-  
-  // Start virtual meeting
-  const handleStartVirtualMeeting = () => {
-    if (!currentPairing?.virtualMeetingLink) return;
-    
-    // In a real app, would open the virtual meeting link
-    logger.info('Starting virtual meeting', { virtualMeetingLink: currentPairing.virtualMeetingLink });
-    
-    // Show notification
-    sendLocalNotification(
-      'Virtual Meeting',
-      'Opening virtual meeting...',
-      { type: 'virtual_meeting' }
-    );
+  // Handle chat navigation
+  const handleOpenChat = () => {
+    if (currentPairing) {
+      // Use the pairing's chatId, or fallback to pairingId if chatId is missing
+      const chatId = currentPairing.chatId || currentPairing.id;
+      
+      console.log('DEBUG: Opening chat from waiting screen', {
+        pairingId: currentPairing.id,
+        chatId: chatId,
+        partnerId: partner?.id,
+        partnerName: partner?.displayName || partner?.username
+      });
+      
+      (navigation as any).navigate('Chat', {
+        pairingId: currentPairing.id,
+        chatId: chatId,
+        partnerId: partner?.id,
+        partnerName: partner?.displayName || partner?.username || 'Your Partner'
+      });
+    }
   };
   
   // Render no pairing available state
@@ -226,10 +262,11 @@ const WaitingScreen: React.FC = () => {
         </View>
         
         <TouchableOpacity 
-          style={styles.refreshButton}
-          onPress={handleBack}
+          style={styles.feedButton}
+          onPress={handleGoToFeed}
         >
-          <Text style={styles.refreshButtonText}>Check Again</Text>
+          <Ionicons name="home-outline" size={20} color={COLORS.primary} />
+          <Text style={styles.feedButtonText}>Go to Feed</Text>
         </TouchableOpacity>
       </View>
     );
@@ -240,11 +277,15 @@ const WaitingScreen: React.FC = () => {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          <TouchableOpacity style={styles.headerButton} onPress={handleGoBack}>
+            <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
           </TouchableOpacity>
+          
           <Text style={styles.headerTitle}>Waiting for Partner</Text>
-          <View style={styles.placeholder} />
+          
+          <TouchableOpacity style={styles.headerButton} onPress={handleGoToFeed}>
+            <Ionicons name="home-outline" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
         
         {/* Content */}
@@ -284,38 +325,26 @@ const WaitingScreen: React.FC = () => {
               </Text>
               
               <Text style={styles.waitingText}>
-                Your partner hasn't posted their selfie yet. Send them a reminder or try again later.
+                Your partner hasn't posted their selfie yet. Chat with them while you wait!
               </Text>
               
-              <TouchableOpacity 
-                style={styles.reminderButton}
-                onPress={handleSendReminder}
-                disabled={reminding}
-              >
-                {reminding ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
-                    <Text style={styles.reminderButtonText}>Send Reminder</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.virtualMeetingButton}
-                onPress={handleStartVirtualMeeting}
-              >
-                <Ionicons name="videocam-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.virtualMeetingText}>Start Virtual Meeting</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.backButton}
-                onPress={handleBack}
-              >
-                <Text style={styles.backButtonText}>Back to Feed</Text>
-              </TouchableOpacity>
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity 
+                  style={styles.chatButton}
+                  onPress={handleOpenChat}
+                >
+                  <Ionicons name="chatbubble-outline" size={20} color={COLORS.text} />
+                  <Text style={styles.chatButtonText}>Open Chat</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.feedButton}
+                  onPress={handleGoToFeed}
+                >
+                  <Ionicons name="home-outline" size={20} color={COLORS.primary} />
+                  <Text style={styles.feedButtonText}>Go to Feed</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
@@ -338,16 +367,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  backButton: {
-    padding: 8,
-  },
   headerTitle: {
     fontFamily: 'ChivoBold',
     fontSize: 18,
     color: COLORS.text,
-  },
-  placeholder: {
-    width: 40,
   },
   content: {
     flex: 1,
@@ -420,47 +443,48 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     lineHeight: 24,
   },
-  reminderButton: {
+  buttonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
+  },
+  chatButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.card,
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 8,
-    width: '100%',
-    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.textSecondary,
+    flex: 1,
   },
-  reminderButtonText: {
+  chatButtonText: {
     fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontSize: 14,
+    color: COLORS.text,
     marginLeft: 8,
   },
-  virtualMeetingButton: {
+  feedButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: COLORS.background,
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 8,
-    width: '100%',
-    marginBottom: 16,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: COLORS.primary,
+    flex: 1,
   },
-  virtualMeetingText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 16,
+  feedButtonText: {
+    fontFamily: 'ChivoBold',
+    fontSize: 14,
     color: COLORS.primary,
     marginLeft: 8,
-  },
-  backButtonText: {
-    fontFamily: 'ChivoRegular',
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textDecorationLine: 'underline',
   },
   noPairingContainer: {
     flex: 1,
@@ -497,16 +521,9 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: COLORS.primary,
   },
-  refreshButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  refreshButtonText: {
-    fontFamily: 'ChivoBold',
-    fontSize: 16,
-    color: COLORS.background,
+  headerButton: {
+    padding: 8,
+    minWidth: 40,
   },
 });
 
