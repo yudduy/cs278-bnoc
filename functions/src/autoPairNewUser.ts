@@ -8,9 +8,32 @@ const TEST_ACCOUNT_PASSWORD = 'password123';
 const TEST_ACCOUNT_EMAIL_DOMAIN = '@testuser.bnoc.stanford.edu';
 
 export const autoPairNewUser = onCall({ region: 'us-central1' }, async (request) => {
+  // Debug authentication
+  console.log('🔍 Function called with auth:', {
+    hasAuth: !!request.auth,
+    uid: request.auth?.uid,
+    email: request.auth?.token?.email,
+    providedUserId: request.data.newUserId
+  });
+
+  // Check if user is authenticated
+  if (!request.auth) {
+    console.error('❌ No authentication provided');
+    throw new HttpsError('unauthenticated', 'User must be authenticated to call this function');
+  }
+
   const newUserId = request.data.newUserId as string | undefined;
   if (!newUserId) {
     throw new HttpsError('invalid-argument', 'newUserId is required');
+  }
+
+  // Verify the authenticated user matches the user being auto-paired
+  if (request.auth.uid !== newUserId) {
+    console.error('❌ Authentication mismatch:', {
+      authUid: request.auth.uid,
+      requestedUserId: newUserId
+    });
+    throw new HttpsError('permission-denied', 'Can only auto-pair your own account');
   }
 
   const db = admin.firestore();

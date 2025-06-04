@@ -6,8 +6,8 @@
  */
 
 // Import all Firebase services from the initialization module
-import { firebaseApp, auth, db, storage } from './firebaseInit';
+import { firebaseApp, auth, db, storage, functions } from './firebaseInit';
 
 // Re-export everything for backward compatibility
-export { auth, db, storage };
+export { auth, db, storage, functions };
 export default firebaseApp;

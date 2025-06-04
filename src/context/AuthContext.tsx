@@ -211,21 +211,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
       // State will be updated by onAuthStateChanged listener
       logger.info('Sign up successful:', userData.id);
       
-      // Trigger auto-pairing for the new user
-      try {
-        logger.info('Attempting to auto-pair new user:', userData.id);
-        const autoPairingSuccess = await autoPairingService.autoPairNewUser(userData.id);
-        
-        if (autoPairingSuccess) {
-          logger.info('Auto-pairing successful for new user:', userData.id);
-        } else {
-          logger.warn('Auto-pairing failed for new user:', userData.id);
-          // Don't fail the signup process if auto-pairing fails
-        }
-      } catch (autoPairingError) {
-        logger.error('Auto-pairing error for new user:', userData.id, autoPairingError);
-        // Don't fail the signup process if auto-pairing fails
-      }
+      // Auto-pairing is now handled automatically by Firestore trigger
+      // No manual function call needed - it will trigger when the user document is created
+      logger.info('Auto-pairing will be handled automatically by Firestore trigger');
       
     } catch (err: any) {
       logger.error('Sign up error:', err);

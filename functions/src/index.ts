@@ -72,19 +72,20 @@ export const pairUsers = onSchedule({
   try {
     console.log('Starting daily pairing algorithm...');
     
-    // Get active users
+    // Get active users (simplified query to avoid index requirements)
     const activeUsersSnapshot = await db.collection('users')
       .where('isActive', '==', true)
-      .where('lastActive', '>', Timestamp.fromDate(
-        new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-      ))
-      .where('flakeStreak', '<', 5) // Skip users with high flake streak
       .get();
     
-    const activeUsers = activeUsersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as User[];
+    // Filter in-memory to avoid complex index requirements
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const activeUsers = activeUsersSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }) as User)
+      .filter(user => {
+        const hasRecentActivity = user.lastActive && user.lastActive.toDate() > threeDaysAgo;
+        const hasLowFlakeStreak = (user.flakeStreak || 0) < 5;
+        return hasRecentActivity && hasLowFlakeStreak;
+      });
     
     console.log(`Found ${activeUsers.length} active users to pair`);
     
@@ -739,3 +740,4 @@ const sendNotificationsInBatches = async (
   return { successCount, failureCount };
 };
 export { autoPairNewUser } from './autoPairNewUser';
+export { autoPairOnUserCreate } from './autoPairTrigger';

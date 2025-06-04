@@ -1,12 +1,31 @@
 # BNOC Scripts
 
-This directory contains utility scripts for managing the BNOC application.
+This directory contains essential production utility scripts for managing the BNOC application.
 
 ## Available Scripts
 
-### 1. Manual Pairing (`manualPairing.js`)
+### 1. Database Status Check (`checkStatus.js`) ⭐
+**Purpose**: Comprehensive health check of the Firebase database.
 
-**Purpose**: Creates daily pairings manually when Cloud Functions fail or for testing.
+**Usage**:
+```bash
+node checkStatus.js
+```
+
+**What it shows**:
+- Active users count and details
+- Today's pairings status breakdown
+- Data integrity issues (e.g., missing users in pairings)
+- getCurrentPairing function tests for all users
+- Global feed, chat rooms, and notifications summary
+
+**When to use**:
+- Daily health monitoring
+- Debugging pairing issues
+- Verifying system status after deployments
+
+### 2. Manual Pairing (`manualPairing.js`) ⭐
+**Purpose**: Creates daily pairings manually when Cloud Functions fail or for emergency situations.
 
 **Usage**:
 ```bash
@@ -19,30 +38,18 @@ node manualPairing.js [optional-date]
 - Creates pairing documents and chat rooms
 - Handles waitlisted users with priority for next pairing
 
+**When to use**:
+- Cloud Functions are down
+- Emergency pairing creation needed
+- Testing pairing algorithm
+
 **Example**:
 ```bash
 node manualPairing.js                    # Create pairings for today
 node manualPairing.js 2025-05-29         # Create pairings for specific date
 ```
 
-### 2. Database Status Check (`checkStatus.js`)
-
-**Purpose**: Comprehensive health check of the Firebase database.
-
-**Usage**:
-```bash
-node checkStatus.js
-```
-
-**What it shows**:
-- Active users count and details
-- Today's pairings status breakdown
-- Global feed items count
-- Chat rooms and notifications
-- Unread notifications by user
-
-### 3. User Deletion (`deleteUser.js`)
-
+### 3. User Account Management (`deleteUser.js`)
 **Purpose**: Safely delete a user account with complete cleanup.
 
 **Usage**:
@@ -52,62 +59,35 @@ node deleteUser.js <username>
 
 **What it does**:
 - Finds user by username
-- Requires "DELETE" confirmation
+- Requires "DELETE" confirmation for safety
 - Updates active pairings (marks as cancelled)
 - Removes user from other users' connections
 - Cleans up chat rooms and messages
 - Deletes user's notifications and settings
 - Deletes Firestore document and Firebase Auth account
 
-**Recent Improvements (May 2025)**:
-- ✅ Fixed JSON string parsing for connections field
-- ✅ Added comprehensive chat room cleanup
-- ✅ Enhanced notification cleanup (both settings and notifications)
-- ✅ Improved error handling and progress reporting
-- ✅ Added detailed summary with actual cleanup counts
+**Safety Features**:
+- Confirmation prompt required
+- Comprehensive cleanup to prevent orphaned data
+- Detailed logging of all operations
 
-**Example**:
-```bash
-node deleteUser.js testuser
-```
-
-### 4. Test Environment Setup (`testSetup.js`)
-
-**Purpose**: Creates a complete test environment with users and sample data.
+### 4. Test Account Creation (`createTestAccounts.js`)
+**Purpose**: Creates test accounts for development and demo purposes.
 
 **Usage**:
 ```bash
-node testSetup.js
+node createTestAccounts.js
 ```
 
 **What it creates**:
-- 5 test users with known passwords
-- Friend connections between all users
-- Sample pairings with different statuses
-- Test feed posts and comments
-- Notification examples
+- Test user accounts with known credentials
+- Proper Firebase Auth integration
+- Firestore user profiles
 
-**Test Users Created**:
-- duy@stanford.edu / hardcarry1738
-- jleong22@stanford.edu / abbabb6969  
-- kelvinknguyen@stanford.edu / seaside123
-- ehsu24@stanford.edu / goodta
-- mb@stanford.edu / goodteacher
-
-### 5. Firebase Auth Testing (`testFirebaseAuth.js`)
-
-**Purpose**: Tests Firebase Authentication functionality.
-
-**Usage**:
-```bash
-node testFirebaseAuth.js [command]
-```
-
-**Available commands**:
-- `test` - Run authentication tests
-- `users` - List Firebase Auth users
-- `profiles` - Check Firestore profiles
-- `pairings` - Create fresh pairings
+**When to use**:
+- Setting up demo environments
+- Creating accounts for manual testing
+- Replacing broken test accounts
 
 ## Prerequisites
 
@@ -120,72 +100,91 @@ All scripts require:
 
 2. **Dependencies**:
    ```bash
+   cd scripts
    npm install firebase-admin uuid
    ```
 
-## Common Use Cases
+## Production Use Cases
 
-### Emergency Pairing Creation
-If Cloud Functions fail to create daily pairings:
+### Daily Monitoring
 ```bash
-cd scripts
-node manualPairing.js
+# Check system health every morning
+cd scripts && node checkStatus.js
 ```
 
-### Database Health Check
-To verify everything is working:
+### Emergency Response
 ```bash
-cd scripts  
+# If auto-pairing fails
+cd scripts && node manualPairing.js
+
+# Check what went wrong
 node checkStatus.js
 ```
 
-### Clean Environment Setup
-To reset for testing:
+### User Management
 ```bash
-cd scripts
-node testSetup.js
+# Remove problematic user account
+cd scripts && node deleteUser.js problemuser
 ```
 
-### Remove Test User
-To clean up after testing:
+### Account Setup
 ```bash
-cd scripts
-node deleteUser.js testusername
+# Create test accounts for demos
+cd scripts && node createTestAccounts.js
 ```
 
-## Script Maintenance Notes
+## System Integration
 
-### Recently Fixed Issues (May 2025)
-- **Firestore Index Problems**: Fixed by deploying proper composite indexes for array-contains queries
-- **Manual Pairing Script**: Updated to use simplified queries while indexes build
-- **Cloud Function Scheduling**: Functions now properly run at 5:00 AM and 7:00 AM PT
+### Cloud Functions Status
+These scripts complement the automated Cloud Functions:
+- **pairUsers** - Runs daily at 5:00 AM PT
+- **autoPairNewUser** - Triggered on user creation
+- **autoPairOnUserCreate** - Firestore trigger backup
 
-### Cleanup Completed
-- Removed duplicate/outdated scripts: `debugUsers.js`, `cleanupDuplicateUsernames.js`, `fixMissingProfiles.js`, `setup-firebase-auth.sh`
-- Consolidated functionality into comprehensive remaining scripts
-
-## Safety Features
-
-- **Confirmation prompts** for destructive operations
-- **Detailed logging** of all operations
-- **Error handling** with graceful recovery
-- **Dry-run capabilities** where applicable
-- **Backup creation** before major changes
+### Monitoring Integration
+- Use `checkStatus.js` for daily health checks
+- Monitor Firebase Function logs: `firebase functions:log --only pairUsers`
+- Check for authentication issues and data integrity
 
 ## Troubleshooting
 
 **"serviceAccountKey.json not found"**
 - Download the service account key from Firebase Console
-- Save it as `serviceAccountKey.json` in the project root (not scripts folder)
-
-**"Index required" errors**
-- The Cloud Functions team has deployed proper indexes
-- Wait a few minutes for indexes to build, then retry
+- Save it as `serviceAccountKey.json` in the project root
 
 **"No pairings for today"**
 - Run `node manualPairing.js` to create missing pairings
-- Check Cloud Function logs with `firebase functions:log`
+- Check Cloud Function status with `firebase functions:list`
 
-**"Multiple users found"**
-- Use `node checkStatus.js` to verify database state
-- Manual investigation may be needed for edge cases
+**"Authentication errors"**
+- Verify Firebase project configuration
+- Check service account permissions
+- Ensure project ID matches in scripts
+
+**"Index required" errors**
+- Contact development team - indexes may need deployment
+- Use manual pairing as temporary workaround
+
+## Safety & Best Practices
+
+- **Always run `checkStatus.js` before manual interventions**
+- **Use confirmation prompts for destructive operations**
+- **Test scripts in development environment first**
+- **Monitor logs for any errors during execution**
+- **Keep service account key secure and never commit to version control**
+
+## Maintenance Notes
+
+### Recent Updates (December 2024)
+- ✅ **Fixed auto-pairing authentication issues**
+- ✅ **Optimized Firebase queries to avoid index requirements**
+- ✅ **Enhanced data integrity checking**
+- ✅ **Cleaned up development/testing scripts**
+- ✅ **Improved error handling and logging**
+
+### Removed Scripts
+The following development scripts were removed after production stabilization:
+- `testAutoPairing.js` - Replaced by production auto-pairing system
+- `repairPairings.js` - Functionality integrated into `manualPairing.js`
+- `testFirebaseAuth.js` - Development testing only
+- `testSetup.js` - Replaced by `createTestAccounts.js`
