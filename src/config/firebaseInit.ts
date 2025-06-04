@@ -8,6 +8,7 @@ import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { getFunctions, Functions } from 'firebase/functions';
 import logger from '../utils/logger'; // Assuming this path is correct
 
 // Firebase configuration
@@ -26,6 +27,7 @@ let firebaseAppInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
 let firestoreDb: Firestore | null = null;
 let storageInstance: FirebaseStorage | null = null;
+let functionsInstance: Functions | null = null;
 
 // Initialize Firebase app
 const initializeFirebaseApp = (): FirebaseApp => {
@@ -83,6 +85,15 @@ const initializeFirebaseServices = () => {
       logger.error('Error initializing Firebase Storage:', error);
       throw new Error(`Failed to initialize Storage: ${error.message || error}`);
     }
+
+    // Initialize Functions
+    try {
+      functionsInstance = getFunctions(app);
+      logger.info('Firebase Functions initialized successfully');
+    } catch (error: any) {
+      logger.error('Error initializing Firebase Functions:', error);
+      throw new Error(`Failed to initialize Functions: ${error.message || error}`);
+    }
     
     firebaseAppInstance = app;
     
@@ -124,9 +135,23 @@ export const storage: FirebaseStorage = (() => {
   return storageInstance;
 })();
 
+export const functions: Functions = (() => {
+  if (!functionsInstance) {
+    throw new Error('Firebase Functions not initialized');
+  }
+  return functionsInstance;
+})();
+
 // Safety function to check if Firebase is properly initialized
 export const isFirebaseInitialized = (): boolean => {
-  return !!(firebaseAppInstance && authInstance && firestoreDb && storageInstance && getApps().length > 0);
+  return !!(
+    firebaseAppInstance &&
+    authInstance &&
+    firestoreDb &&
+    storageInstance &&
+    functionsInstance &&
+    getApps().length > 0
+  );
 };
 
 // Export a singleton to ensure Firebase is only initialized once
@@ -135,5 +160,6 @@ export default {
   auth,
   db,
   storage,
+  functions,
   isInitialized: isFirebaseInitialized()
 };

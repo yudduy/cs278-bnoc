@@ -4,12 +4,13 @@ A React Native app built with Firebase for daily photo pairings between friends.
 
 ## Recent Feature Updates
 
-### 🤝 Auto-Pairing System
+-### 🤝 Auto-Pairing System
 New users are automatically paired to ensure immediate app usability:
 
-- **Instant pairing** - New users are immediately paired with jleong222 or test accounts
+- **Instant pairing** - New users are paired with a waitlisted user when available, otherwise a test account is created automatically
 - **Zero waiting time** - No need to wait for other users to join
 - **Smart fallback system** - Creates test accounts automatically when needed
+- **Server driven** - Auto-pairing logic runs in a Cloud Function
 - **Development friendly** - Consistent test accounts with known credentials
 - **Seamless integration** - Works during both sign-up and login flows
 - **Enhanced debugging** - Comprehensive logging with emoji indicators for easy troubleshooting
@@ -50,8 +51,8 @@ The app has been updated to focus exclusively on collaborative photo sharing:
 
 ### 🔧 Technical Implementation
 
-#### Auto-Pairing System
-- **Smart pairing logic** - Prioritizes jleong222, falls back to test account creation
+-#### Auto-Pairing System
+- **Smart pairing logic** - Pairs with a waitlisted user first and falls back to automatic test account creation
 - **Automatic test accounts** - Creates test_1, test_2, etc. with password123
 - **Integrated flows** - Triggers during sign-up and login for users without pairings
 - **Non-blocking design** - Never prevents successful authentication

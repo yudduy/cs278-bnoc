@@ -738,3 +738,4 @@ const sendNotificationsInBatches = async (
   
   return { successCount, failureCount };
 };
+export { autoPairNewUser } from './autoPairNewUser';

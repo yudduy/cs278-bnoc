@@ -8,7 +8,7 @@ The auto-pairing feature ensures that new users are immediately paired with some
 
 When a new user signs up or an existing user logs in without a pairing for today, the system automatically:
 
-1. **First Choice**: Pairs them with the designated test user `jleong222` (if available)
+1. **First Choice**: Pairs them with a waitlisted user who has not been matched for the day
 2. **Fallback**: Creates a new test account and pairs the user with it
 
 This ensures every user always has someone to take photos with, making the app immediately usable.
@@ -22,15 +22,13 @@ The system follows this prioritized logic:
 ```
 New User Signs Up
       ↓
-Check if jleong222 exists
+Look for waitlisted user
       ↓
-   [YES] → Check if jleong222 has active pairing today
+   [FOUND] → Pair with waitlisted user ✅
       ↓
-   [NO] → Pair with jleong222 ✅
+   [NOT FOUND] → Create new test account (test_1, test_2, etc.)
       ↓
-   [YES] → Create new test account (test_1, test_2, etc.)
-      ↓
-Pair new user with test account ✅
+ Pair new user with test account ✅
 ```
 
 ### Test Account Creation
@@ -55,13 +53,14 @@ The auto-pairing feature is integrated into:
 
 3. **Firebase Service** (`firebase.ts`)
    - Exposed through the main Firebase service facade
-   - Available for manual triggering if needed
+   - Uses a Cloud Function to perform pairing on the server
 
 ## Files Created/Modified
 
 ### New Files
 
 - `src/services/autoPairingService.ts` - Core auto-pairing logic
+- `functions/src/autoPairNewUser.ts` - Cloud Function handling pairing
 - `scripts/createTestAccounts.js` - Manual test account creation utility
 - `docs/AUTO_PAIRING_FEATURE.md` - This documentation
 
@@ -69,6 +68,7 @@ The auto-pairing feature is integrated into:
 
 - `src/context/AuthContext.tsx` - Added auto-pairing triggers
 - `src/services/firebase.ts` - Added auto-pairing methods to facade
+- `functions/src/index.ts` - Exposes the autoPairNewUser Cloud Function
 
 ## API Reference
 
@@ -97,15 +97,9 @@ const needsPairing = await firebaseService.needsAutoPairing(userId);
 
 ## Configuration
 
-### Target User
+### Waitlisted Users
 
-The target user for pairing is configured in `autoPairingService.ts`:
-
-```typescript
-const TARGET_USER_USERNAME = 'jleong222';
-```
-
-To change the target user, modify this constant.
+The server-side function first checks for a waitlisted user who hasn't been paired for the day and pairs the new user with them if found.
 
 ### Test Account Settings
 
@@ -114,6 +108,7 @@ const TEST_ACCOUNT_PASSWORD = 'password123';
 const TEST_ACCOUNT_EMAIL_DOMAIN = '@testuser.bnoc.stanford.edu';
 const DEFAULT_PHOTO_URL = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
 ```
+These constants live in `functions/src/autoPairNewUser.ts`.
 
 ## Manual Test Account Creation
 
@@ -143,15 +138,9 @@ The script will prompt you for:
 2. Check logs for auto-pairing messages
 3. Verify a new pairing was created
 
-### Test jleong222 Pairing
-
-1. Ensure jleong222 exists and has no active pairing
-2. Create a new user
-3. Verify they are paired with jleong222
-
 ### Test Fallback Account Creation
 
-1. Ensure jleong222 already has an active pairing
+1. Ensure no waitlisted users are available
 2. Create a new user
 3. Verify a new test account was created
 4. Verify the new user is paired with the test account
@@ -169,7 +158,7 @@ The auto-pairing system includes comprehensive error handling:
 
 Auto-pairing activities are logged with these prefixes:
 
-- `Successfully paired new user X with jleong222`
+- `Successfully paired new user X with waitlisted user Y`
 - `Successfully paired new user X with test account test_Y`
 - `Auto-pairing failed for new user X`
 - `Created test account: test_Y`
@@ -196,9 +185,9 @@ Potential improvements for the auto-pairing system:
 
 ### Common Issues
 
-1. **jleong222 not found**
-   - Ensure the user exists in the database
-   - Check the username spelling
+1. **No waitlisted users available**
+   - Ensure waitlistedToday flag is set for a fallback user
+   - Check that the user has not already been paired today
 
 2. **Test account creation fails**
    - Check Firebase Auth permissions
