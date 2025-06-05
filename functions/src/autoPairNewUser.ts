@@ -4,7 +4,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { v4 as uuidv4 } from 'uuid';
 
 const DEFAULT_PHOTO_URL = 'https://firebasestorage.googleapis.com/v0/b/stone-bison-446302-p0.firebasestorage.app/o/assets%2Fmb.jpeg?alt=media&token=e6e88f85-a09d-45cc-b6a4-cad438d1b2f6';
-const TEST_ACCOUNT_PASSWORD = 'password123';
+const TEST_ACCOUNT_PASSWORD = process.env.TEST_ACCOUNT_PASSWORD || '';
 const TEST_ACCOUNT_EMAIL_DOMAIN = '@testuser.bnoc.stanford.edu';
 
 export const autoPairNewUser = onCall({ region: 'us-central1' }, async (request) => {

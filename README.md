@@ -54,7 +54,7 @@ The app has been updated to focus exclusively on collaborative photo sharing:
 
 -#### Auto-Pairing System
 - **Smart pairing logic** - Pairs with a waitlisted user first and falls back to automatic test account creation
-- **Automatic test accounts** - Creates test_1, test_2, etc. with password123
+- **Automatic test accounts** - Creates test_1, test_2, etc. with a default password
 - **Integrated flows** - Triggers during sign-up and login for users without pairings
 - **Non-blocking design** - Never prevents successful authentication
 - **Firebase Auth integration** - Seamlessly creates test users in Firebase
@@ -119,6 +119,22 @@ Ensure your Firebase project has:
 - Authentication enabled
 - Real-time database features activated
 
+Configuration values such as the API key and project ID are loaded
+from environment variables. Create an `.env` file or set the following
+variables in your environment:
+
+```
+EXPO_PUBLIC_FIREBASE_API_KEY
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
+EXPO_PUBLIC_FIREBASE_PROJECT_ID
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+EXPO_PUBLIC_FIREBASE_APP_ID
+EXPO_PUBLIC_FIREBASE_DATABASE_URL
+TEST_ACCOUNT_PASSWORD
+ADMIN_TEST_PASSWORD
+```
+
 ## Project Structure
 ```
 src/
@@ -147,16 +163,6 @@ src/
 │       ├── index.ts                     # Daily pairing Cloud Functions
 │       ├── autoPairNewUser.ts           # New user auto-pairing
 │       └── autoPairTrigger.ts           # Firestore trigger pairing
-├── docs/
-│   ├── AUTO_PAIRING_FEATURE.md          # Auto-pairing system docs
-│   ├── DEBUG_MAINTENANCE.md             # Debugging & maintenance guide
-│   ├── REALTIME_FEATURES.md             # Real-time system documentation
-│   └── FIREBASE.md                      # Firebase configuration guide
-└── scripts/
-    ├── checkStatus.js                   # Database health monitoring
-    ├── manualPairing.js                 # Emergency pairing creation
-    ├── deleteUser.js                    # User account management
-    └── createTestAccounts.js            # Test account creation
 ```
 
 ## Contributing

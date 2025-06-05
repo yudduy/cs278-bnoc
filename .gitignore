@@ -33,3 +33,4 @@ android/
 ios/
 .DS_Store
 scripts/firebase-debug.log
+serviceAccountKey.json

@@ -183,22 +183,25 @@ export const deleteAllTestUsers = async (testEmailDomain: string = 'test.stanfor
  * Create a set of standard test users
  */
 export const createStandardTestUsers = async (): Promise<User[]> => {
+  const defaultPassword = process.env.TEST_ACCOUNT_PASSWORD || 'changeme';
+  const adminPassword = process.env.ADMIN_TEST_PASSWORD || 'changeme';
+
   const standardUsers = [
     {
       email: 'user1@test.stanford.edu',
-      password: 'password123',
+      password: defaultPassword,
       username: 'testuser1',
       displayName: 'Test User 1'
     },
     {
       email: 'user2@test.stanford.edu',
-      password: 'password123',
+      password: defaultPassword,
       username: 'testuser2',
       displayName: 'Test User 2'
     },
     {
       email: 'admin@test.stanford.edu',
-      password: 'admin123',
+      password: adminPassword,
       username: 'admin',
       displayName: 'Admin User'
     }

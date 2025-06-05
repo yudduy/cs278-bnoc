@@ -13,13 +13,13 @@ import logger from '../utils/logger'; // Assuming this path is correct
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDhUJt5HOOrR6MRiKKiLZ86unk8V6jKUx4", // IMPORTANT: Consider environment variables
-  authDomain: "bnoc.firebaseapp.com",
-  projectId: "stone-bison-446302-p0",
-  storageBucket: "stone-bison-446302-p0.firebasestorage.app",
-  messagingSenderId: "314188937187",
-  appId: "1:314188937187:ios:3401193ce380339069d2d6",
-  databaseURL: "https://stone-bison-446302-p0-default-rtdb.firebaseio.com"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '',
+  databaseURL: process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL || ''
 };
 
 // Global variables to hold Firebase instances
