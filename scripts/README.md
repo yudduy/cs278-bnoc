@@ -49,7 +49,37 @@ node manualPairing.js                    # Create pairings for today
 node manualPairing.js 2025-05-29         # Create pairings for specific date
 ```
 
-### 3. User Account Management (`deleteUser.js`)
+### 3. Complete Incomplete Pairings (`complete-incomplete-pairings.js`) ⭐
+**Purpose**: Artificially complete pairings where one user submitted a photo but their partner didn't respond.
+
+**Usage**:
+```bash
+# Dry run to see what would be completed
+node complete-incomplete-pairings.js --dry-run
+
+# Actually complete the pairings
+node complete-incomplete-pairings.js
+```
+
+**What it does**:
+- Finds all pairings with `user1_submitted` or `user2_submitted` status
+- Creates artificial completion for non-responding partners
+- Updates pairing status to `completed` with artificial flag
+- Adds completed pairings to the global feed
+- Uses placeholder images for missing partner photos
+
+**When to use**:
+- Clean up abandoned incomplete pairings
+- Provide closure for users who submitted photos but partners didn't respond
+- Maintain data integrity in the pairing system
+
+**Safety Features**:
+- Dry run mode for safe testing
+- Confirmation prompt before making changes
+- Marks artificial completions with special flags
+- Detailed logging of all operations
+
+### 4. User Account Management (`deleteUser.js`)
 **Purpose**: Safely delete a user account with complete cleanup.
 
 **Usage**:
@@ -71,7 +101,7 @@ node deleteUser.js <username>
 - Comprehensive cleanup to prevent orphaned data
 - Detailed logging of all operations
 
-### 4. Test Account Creation (`createTestAccounts.js`)
+### 5. Test Account Creation (`createTestAccounts.js`)
 **Purpose**: Creates test accounts for development and demo purposes.
 
 **Usage**:
@@ -119,6 +149,15 @@ cd scripts && node manualPairing.js
 
 # Check what went wrong
 node checkStatus.js
+```
+
+### Pairing Cleanup
+```bash
+# Check for incomplete pairings
+cd scripts && node complete-incomplete-pairings.js --dry-run
+
+# Complete abandoned pairings
+node complete-incomplete-pairings.js
 ```
 
 ### User Management
@@ -175,7 +214,12 @@ These scripts complement the automated Cloud Functions:
 
 ## Maintenance Notes
 
-### Recent Updates (December 2024)
+### Recent Updates (June 2025)
+- ✅ **Added incomplete pairings completion script**
+- ✅ **Enhanced pairing cleanup capabilities**
+- ✅ **Improved artificial completion system**
+
+### Previous Updates (December 2024)
 - ✅ **Fixed auto-pairing authentication issues**
 - ✅ **Optimized Firebase queries to avoid index requirements**
 - ✅ **Enhanced data integrity checking**
