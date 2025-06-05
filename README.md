@@ -113,4 +113,4 @@ src/
 ```
 
 ## Contributing
-If you're adding new features, please include comprehensive error handling, real-time update support where it makes sense, proper TypeScript typing, console logging for debugging, and user-friendly fallback mechanisms. I've learned the hard way that these things save so much time later.
+If you're adding new features, please include comprehensive error handling, real-time update support where it makes sense, proper TypeScript typing, console logging for debugging, and user-friendly fallback mechanisms. I've learned the hard way that these things save so much time later. Thanks!
